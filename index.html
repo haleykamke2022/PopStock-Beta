@@ -67,6 +67,21 @@ dialog form{min-width:0}
 #psBackToTop{position:fixed;right:16px;bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:15;border-radius:999px;box-shadow:0 5px 22px #26362d44;padding:11px 16px;min-height:46px}
 #psBackToTop[hidden]{display:none!important}
 @media(min-width:900px){#psBackToTop{right:max(24px,calc((100vw - 850px)/2))}}
+
+/* Phase 6E Step 3: seven primary destinations remain usable on narrow screens. */
+@media(max-width:600px){
+ #nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));overflow:visible;align-items:stretch}
+ #nav>button,#nav>.pop-more-wrap{width:100%;min-width:0;flex:none}
+ #nav>button,#nav>.pop-more-wrap>button{padding:10px 3px;min-height:46px;font-size:12px;line-height:1.2;white-space:normal;overflow-wrap:break-word}
+ #nav>.pop-more-wrap{display:flex;align-items:stretch}
+ #nav .pop-more-menu{top:100%;right:0;width:min(310px,94vw)}
+ .production-group .actions button,.ps-order-status-group .actions button{min-height:44px}
+ .production-steps .production-check{width:100%;min-height:44px}
+ dialog .actions{display:grid;grid-template-columns:minmax(0,1fr);gap:9px}
+ dialog .actions button{width:100%;min-width:0}
+ dialog fieldset{min-width:0}
+ dialog .formgrid{grid-template-columns:minmax(0,1fr)}
+}
 </style></head><body><header><img id="brandImage" src="./icons/icon-192.png" alt="App logo"><div><h1>Cake Pop Inventory</h1><small></small></div></header><nav id="nav"></nav><main><section id="home"></section><section id="guide"></section><section id="quotes"></section><section id="production"></section><section id="stock"></section><section id="flavors"></section><section id="orders"></section><section id="events"></section><section id="freezer"></section><section id="shopping"></section><section id="settings"></section><footer>Personal-use app • Saved on this device • Export backups often</footer></main><dialog id="dialog"><div class="row"><h2 id="dialogTitle"></h2><button class="alt" onclick="document.getElementById('dialog').close()">✕</button></div><div id="dialogBody"></div></dialog><script>
 (function(){
  function downloadBackup(){
@@ -3496,6 +3511,174 @@ popSaveActual=function(e,x){
   d.doughHistory.push({id:id(),recipeId:line.flavor,shapeId:line.shape,planKind:'orders',planId:x,date:new Date().toISOString(),weightOz:weights[i]?Number(weights[i]):null,finishedPops:values[i],batchCount:batches[i]||1,exclude:false});
  });
  save();render();
+};
+
+
+/* Personal Pop Stop: self-serve event mode, with no staffed attendance labor. */
+const psSelfServeEditBefore=editPlan;
+editPlan=function(kind,x=''){
+ psSelfServeEditBefore(kind,x);
+ if(kind!=='events')return;
+ const form=$('dialogBody')?.querySelector('form');
+ if(!form)return;
+ const event=d.events.find(p=>p.id===x);
+ const wrapper=document.createElement('div');wrapper.className='card';
+ wrapper.innerHTML='<label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="selfServeEvent" '+(event?.selfServeEvent?'checked':'')+'> <strong>Self-serve pop-up (unattended)</strong></label><p class="muted small">For an at-home Pop Stop or self-serve cooler. Plan flavors, production and sales as normal, but attendance hours and staffing labor are zero. Time spent baking or preparing still counts as production labor.</p>';
+ form.querySelector('#planlines')?.insertAdjacentElement('beforebegin',wrapper);
+};
+const psSelfServeSaveBefore=savePlan;
+savePlan=function(e,kind,x){
+ if(kind!=='events')return psSelfServeSaveBefore(e,kind,x);
+ const flag=!!e.target.elements.selfServeEvent?.checked;
+ const ids=new Set(d.events.map(p=>p.id));
+ const result=psSelfServeSaveBefore(e,kind,x);
+ const event=x?d.events.find(p=>p.id===x):d.events.find(p=>!ids.has(p.id));
+ if(event&&event.status==='Planned'){
+  event.selfServeEvent=flag;
+  if(flag&&event.report?.actualCosts)event.report.actualCosts.attendanceHours=0;
+  save();render();
+ }
+ return result;
+};
+const psSelfServeProfitEditBefore=psProfitEdit;
+psProfitEdit=function(x){
+ psSelfServeProfitEditBefore(x);
+ const event=d.events.find(p=>p.id===x);
+ if(!event?.selfServeEvent)return;
+ const form=$('dialogBody')?.querySelector('form');
+ const field=form?.elements.attendanceHours;
+ if(!field)return;
+ field.value='0';field.readOnly=true;
+ const label=field.previousElementSibling;
+ if(label?.tagName==='LABEL')label.textContent='Attendance hours — 0 (self-serve)';
+ const note=document.createElement('p');note.className='muted small';
+ note.textContent='Self-serve event: no staffing time charged. Production hours remain editable.';
+ field.insertAdjacentElement('afterend',note);
+};
+const psSelfServeProfitSaveBefore=psProfitSave;
+psProfitSave=function(e,x){
+ const event=d.events.find(p=>p.id===x);
+ if(event?.selfServeEvent&&e.target.elements.attendanceHours)e.target.elements.attendanceHours.value='0';
+ return psSelfServeProfitSaveBefore(e,x);
+};
+const psSelfServeProfitModelBefore=psProfitModel;
+psProfitModel=function(p){
+ if(!p?.selfServeEvent)return psSelfServeProfitModelBefore(p);
+ const costs=p.report?.actualCosts;
+ if(!costs)return psSelfServeProfitModelBefore(p);
+ // Evaluate with attendance set to zero without mutating historical data.
+ const copy={...p,report:{...p.report,actualCosts:{...costs,attendanceHours:0}}};
+ return psSelfServeProfitModelBefore(copy);
+};
+
+
+/* Phase 6E: immediate next actions and plain-language production guidance. */
+const ps6eRenderProductionBefore=renderProduction;
+renderProduction=function(){
+ ps6eRenderProductionBefore();
+ const root=$('production');if(!root)return;
+ root.querySelector('.ps6e-workflow')?.remove();
+ const banner=document.createElement('div');banner.className='card ps6e-workflow';
+ banner.style.margin='12px 0 18px';
+ banner.innerHTML='<strong>Your production workflow</strong>'+
+ '<p class="muted small" style="margin:8px 0">1. Plan flavors and quantities &nbsp; 2. Start production (ingredients are deducted) &nbsp; 3. Check off baking steps &nbsp; 4. Finish with actual counts (packaging is deducted)</p>'+
+ '<div class="actions"><button type="button" class="ps6e-new-order">+ New order</button><button type="button" class="alt ps6e-new-event">+ New event</button></div>'+
+ '<p class="muted small" style="margin-top:8px">Start and Finish are the steps that change inventory. Checking off production steps does not deduct stock.</p>';
+ banner.querySelector('.ps6e-new-order').addEventListener('click',()=>editPlan('orders'));
+ banner.querySelector('.ps6e-new-event').addEventListener('click',()=>editPlan('events'));
+ const stats=root.querySelector('.home-stats');
+ if(stats)stats.insertAdjacentElement('afterend',banner);
+ else root.prepend(banner);
+};
+
+
+/* Phase 6E step 2: progressive disclosure of nonessential order/event fields. */
+const ps6eSimpleFormsBefore=editPlan;
+editPlan=function(kind,x=''){
+ ps6eSimpleFormsBefore(kind,x);
+ const form=$('dialogBody')?.querySelector('form');if(!form)return;
+ const wrap=(node,title,open=false)=>{
+  if(!node||node.closest('details.ps6e-optional'))return;
+  const details=document.createElement('details');details.className='card ps6e-optional';details.open=open;
+  const summary=document.createElement('summary');summary.style.cursor='pointer';
+  summary.innerHTML='<strong>'+title+'</strong>';
+  node.before(details);details.append(summary,node);
+ };
+ if(kind==='orders'){
+  const addon=[...form.querySelectorAll('h3')].find(h=>h.textContent.trim()==='Optional custom-order add-ons');
+  if(addon)wrap(addon.closest('.pair'),'Bags & labels (optional)',!!(d.orders.find(p=>p.id===x)?.addBag||d.orders.find(p=>p.id===x)?.addLabel));
+ }
+ if(kind==='events'){
+  const expenseHead=[...form.querySelectorAll('h3')].find(h=>h.textContent.trim()==='Other event expenses');
+  if(expenseHead){
+   const rows=form.querySelector('#eventExpenseRows'),add=rows?.nextElementSibling;
+   const block=document.createElement('div');expenseHead.before(block);block.append(expenseHead);
+   if(rows)block.append(rows);if(add?.tagName==='BUTTON')block.append(add);
+   wrap(block,'Other event expenses (optional)',!!d.events.find(p=>p.id===x)?.expenses?.length);
+  }
+  const selfServe=form.elements.selfServeEvent?.closest('.card');
+  if(selfServe)wrap(selfServe,'Self-serve Pop Stop (optional)',!!d.events.find(p=>p.id===x)?.selfServeEvent);
+ }
+};
+
+
+/* Phase 6E step 4: live completion preview, using saved order counts and prep data. */
+const ps6eBeforeFinishPreview=popFinishOrder;
+popFinishOrder=function(x){
+ ps6eBeforeFinishPreview(x);
+ const p=d.orders.find(v=>v.id===x),form=$('dialogBody')?.querySelector('form');
+ if(!p||!form||!form.querySelector('.pop-actual'))return;
+ const inputs=[...form.querySelectorAll('.pop-actual')];
+ const summary=document.createElement('div');summary.className='notice ps6e-finish-preview';
+ summary.setAttribute('aria-live','polite');
+ const heading=document.createElement('strong');heading.textContent='Production totals';
+ const stats=document.createElement('div');stats.style.marginTop='7px';
+ const hint=document.createElement('p');hint.className='muted small';
+ hint.textContent='Counts are prefilled from the order; adjust only what changed. These are estimates until you confirm Finish.';
+ summary.append(heading,stats,hint);
+ const first=inputs[0]?.closest('.pair');
+ if(first)first.before(summary);
+ const renderTotals=()=>{
+  const planned=(p.lines||[]).reduce((n,l)=>n+(Number(l.count)||0),0);
+  const valid=inputs.every(i=>i.value.trim()!==''&&Number.isInteger(Number(i.value))&&Number(i.value)>=0);
+  if(!valid){stats.textContent='Planned: '+planned+' pops · Enter a whole number of 0 or more for each flavor.';return;}
+  const actual=inputs.reduce((n,i)=>n+Number(i.value),0);
+  const diff=actual-planned;
+  stats.textContent='Planned: '+planned+' · Made: '+actual+' · Difference: '+(diff>0?'+':'')+diff+' pops';
+ };
+ inputs.forEach(i=>{i.addEventListener('input',renderTotals);i.addEventListener('change',renderTotals)});
+ renderTotals();
+ const checklist=[...form.querySelectorAll('.ps6d-step')];
+ if(checklist.length){
+  const field=checklist[0].closest('fieldset');
+  const count=document.createElement('p');count.className='muted small';
+  field?.append(count);
+  const updateSteps=()=>{const n=checklist.filter(c=>c.checked).length;count.textContent=n+' of '+checklist.length+' stages confirmed before completion.'};
+  checklist.forEach(c=>c.addEventListener('change',updateSteps));
+  updateSteps();
+ }
+};
+
+
+/* Phase 6E final pass: one clear next action for new bakers. */
+const ps6eGuideBefore=renderGuide;
+renderGuide=function(){
+ ps6eGuideBefore();
+ const root=$('guide');if(!root)return;
+ root.querySelector('.ps6e-next-step')?.remove();
+ const steps=setupSteps();
+ const next=steps.find(s=>!s.done);
+ const card=document.createElement('div');card.className='card ps6e-next-step';
+ const headline=document.createElement('strong');
+ headline.textContent=next?'Recommended next step: '+next.name:'Setup complete — ready to bake';
+ const description=document.createElement('p');description.className='muted small';
+ description.textContent=next?next.description:'Your setup checklist is finished. Use Orders or Production to plan and track your next bake.';
+ const button=document.createElement('button');button.type='button';
+ button.textContent=next?next.action:'Open Production';
+ button.addEventListener('click',()=>go(next?.target||'production'));
+ card.append(headline,description,button);
+ const firstCard=root.querySelector('.card');
+ if(firstCard)firstCard.before(card);else root.append(card);
 };
 
 try{render();psWelcomeFirstLaunch()}catch(psError){window.psShowStartupError?.(psError?.stack||psError?.message||psError);psEmergencyRecovery(psError)}if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(console.warn));</script></body></html>
