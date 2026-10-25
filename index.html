@@ -68,6 +68,45 @@ dialog form{min-width:0}
 #psBackToTop[hidden]{display:none!important}
 @media(min-width:900px){#psBackToTop{right:max(24px,calc((100vw - 850px)/2))}}
 </style></head><body><header><img id="brandImage" src="./icons/icon-192.png" alt="App logo"><div><h1>Cake Pop Inventory</h1><small></small></div></header><nav id="nav"></nav><main><section id="home"></section><section id="guide"></section><section id="quotes"></section><section id="production"></section><section id="stock"></section><section id="flavors"></section><section id="orders"></section><section id="events"></section><section id="freezer"></section><section id="shopping"></section><section id="settings"></section><footer>Personal-use app • Saved on this device • Export backups often</footer></main><dialog id="dialog"><div class="row"><h2 id="dialogTitle"></h2><button class="alt" onclick="document.getElementById('dialog').close()">✕</button></div><div id="dialogBody"></div></dialog><script>
+(function(){
+ function downloadBackup(){
+  try{
+   var raw=localStorage.getItem('cakepop_custom_v2');
+   if(!raw){alert('No PopStock data found in this browser storage. Your other home-screen app may have separate storage. Do not restore an empty backup.');return;}
+   var data=JSON.parse(raw);
+   var details=['items','recipes','orders','events','shapes'].map(function(k){return k+': '+(Array.isArray(data[k])?data[k].length:'unknown');}).join(', ');
+   if(!confirm('Export this browser copy of PopStock? '+details+'\n\nThis will NOT change or delete any saved data.'))return;
+   var blob=new Blob([raw],{type:'application/json'});
+   var url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='popstock-recovery-'+new Date().toISOString().slice(0,10)+'.json';
+   document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(url);},3000);
+  }catch(err){alert('Cannot export storage: '+err.message);}
+ }
+ function recovery(reason){
+  if(document.getElementById('ps-recovery'))return;
+  var div=document.createElement('div');div.id='ps-recovery';div.style.cssText='padding:16px;margin:16px;background:#fff;border:2px solid #ad5b7b;border-radius:12px;color:#302b30;font:15px/1.5 sans-serif';
+  var title=document.createElement('h2');title.textContent='PopStock Recovery';div.appendChild(title);
+  var message=document.createElement('p');message.textContent='The app interface did not load ('+reason+'). Do not remove the home-screen app or clear website data. You can export a read-only copy of this browser\'s saved information.';div.appendChild(message);
+  var button=document.createElement('button');button.type='button';button.textContent='Download saved data from this browser';button.onclick=downloadBackup;div.appendChild(button);
+  var details=document.createElement('p');details.style.fontSize='12px';
+  try{var data=JSON.parse(localStorage.getItem('cakepop_custom_v2')||'null');details.textContent=data?'Local records found: '+['items','recipes','orders','shapes'].map(function(k){return k+' '+(data[k]?.length||0)}).join(' · '):'No saved data found in this browser storage.';}catch(e){details.textContent='Saved data exists but could not be summarized.';}
+  div.appendChild(details);(document.querySelector('main')||document.body).prepend(div);
+ }
+ window.addEventListener('error',function(e){recovery('script error');});
+ window.addEventListener('unhandledrejection',function(){recovery('loading error');});
+ window.addEventListener('load',function(){setTimeout(function(){var nav=document.getElementById('nav');if(!nav||!nav.querySelector('button'))recovery('navigation missing');},900);});
+})();
+</script><script>
+(function(){
+ function show(message){
+  var id='ps-startup-error';var box=document.getElementById(id);
+  if(!box){box=document.createElement('div');box.id=id;box.setAttribute('role','alert');box.style.cssText='margin:18px;padding:16px;border:2px solid #a44;border-radius:12px;background:#fff;color:#402525;font-size:15px;white-space:pre-wrap';(document.querySelector('main')||document.body).prepend(box);}
+  box.textContent='PopStock could not finish loading. Your saved data has NOT been cleared. Do not uninstall or clear website data.\n\nDiagnostic: '+String(message);
+ }
+ window.addEventListener('error',function(event){show((event.message||'Unknown script error')+' at line '+(event.lineno||'?'));});
+ window.addEventListener('unhandledrejection',function(event){show('Promise error: '+String(event.reason));});
+ window.psShowStartupError=show;
+})();
+</script><script>
 const KEY='cakepop_simple_v1',NEW='cakepop_custom_v2';const defaults=['Emulsions','Inclusions','Sprinkles','Almond bark','Cake mixes','Shapes','Packaging'];const icons=['','','','','','',''];const oldNames={'Popper shapes':'Shapes','Popsicle sticks':'Packaging','Wraps':'Packaging','Stickers':'Packaging','Boxes':'Packaging','Decorations':'Packaging','Other':'Packaging'};const seed=()=>({items:[],recipes:[],orders:[],events:[],categories:defaults.map((name,j)=>({id:'c'+j,name,emoji:icons[j]})),logo:'',log:[]});let d;try{d=JSON.parse(localStorage.getItem(NEW))}catch{}if(!d){let old;try{old=JSON.parse(localStorage.getItem(KEY))}catch{}d=seed();if(old&&Array.isArray(old.items)){d.items=olalpha(d.items).map(i=>({...i,type:oldNames[i.type]||i.type,restock:i.restock??Math.max(1,i.min||1)}));d.recipes=old.recipes||[];d.orders=(old.orders||[]).map(o=>({...o,lines:o.lines||[],status:o.status||'Planned',deducted:o.deducted||false}));d.log=old.log||[]}}d.categories ||=seed().categories;d.events ||= [];d.orders ||= [];d.recipes ||= [];d.items ||= [];d.log ||= [];d.logo ||= '';d.freezer ||= [];d.shapes ||= [];d.freezerEnabled ??= true;const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),id=()=>Math.random().toString(36).slice(2)+Date.now().toString(36),catName=i=>d.categories.find(c=>c.id===i.type)?.name||i.type||'Uncategorized',catOf=i=>d.categories.find(c=>c.id===i.type)||d.categories.find(c=>c.name===i.type),itemName=x=>d.items.find(i=>i.id===x)?.name||'Deleted supply',flavorName=x=>d.recipes.find(r=>r.id===x)?.name||'Deleted flavor';let tab='stock',selected=null;function save(){try{localStorage.setItem(NEW,JSON.stringify(d))}catch(e){alert('Phone storage is full. Export a backup; consider using a smaller logo.')}}function modal(title,body){$('dialogTitle').textContent=title;$('dialogBody').innerHTML=body;$('dialog').showModal()}function done(){save();$('dialog').close();render()}function go(t){tab=t;selected=null;render()}function render(){$('nav').innerHTML=[['stock','Stock'],['flavors','Flavors'],['orders','Orders'],['events','Events'],['freezer','Freezer'],['shopping','Shopping'],['settings','Settings']].map(([t,l])=>`<button class="${tab===t?'sel':''}" onclick="go('${t}')">${l}</button>`).join('');document.querySelectorAll('section').forEach(s=>s.classList.toggle('show',s.id===tab));$('brandImage').src=d.logo||'./icons/icon-192.png';renderStock();renderFlavors();renderPlans('orders');renderPlans('events');renderFreezer();renderShopping();renderSettings()}
 function renderStock(){let cats=alpha(d.categories);let html=selected?`<div class="row"><button class="alt" onclick="selected=null;render()">← Categories</button><button onclick="editItem('', '${selected}')">+ Supply</button></div><h2>${esc(cats.find(c=>c.id===selected)?.name||'Stock')}</h2>`:`<div class="row"><h2>My Stock</h2><button onclick="editItem()">+ Supply</button></div><p class="muted">Choose a category to view and update your supplies.</p><div class="grid">${cats.map(c=>`<button class="tile" onclick="selected='${c.id}';render()"><strong>${esc(c.name)}</strong><small>${d.items.filter(i=>catOf(i)?.id===c.id).length} supplies →</small></button>`).join('')}</div>`;if(selected){let list=alpha(d.items.filter(i=>catOf(i)?.id===selected));html+=`<div class="card">${list.length?list.map(i=>`<div class="item"><div class="row"><strong>${esc(i.name)}</strong><span class="pill">${Number(i.qty)} ${esc(i.unit||'packs')}</span></div><div class="small muted">Low at ${i.min||0} · Restock target ${i.restock??i.min??0} ${esc(i.unit||'packs')}</div><div class="actions"><button class="alt" onclick="adjust('${i.id}',1)">+ Add</button><button class="alt" onclick="adjust('${i.id}',-1)">− Use</button><button class="alt" onclick="editItem('${i.id}')">Edit</button></div></div>`).join(''):'<p class="muted">No supplies here yet.</p>'}</div>`} $('stock').innerHTML=html}
 function editItem(x='',cat=''){let i=d.items.find(i=>i.id===x)||{name:'',type:cat||d.categories[0]?.id,qty:0,min:1,restock:3,unit:'pack'};modal(x?'Edit stock':'Add stock',`<form onsubmit="saveItem(event,'${x}')"><label>Supply name</label><input name="name" required value="${esc(i.name)}"><label>Category</label><select name="type">${alpha(d.categories).map(c=>`<option value="${c.id}" ${catOf(i)?.id===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select><div class="formgrid"><div><label>Quantity in stock</label><input name="qty" type="number" step="any" min="0" value="${i.qty}" required></div><div><label>Unit</label><input name="unit" value="${esc(i.unit||'pack')}"></div><div><label>Low stock alert at</label><input name="min" type="number" min="0" step="1" value="${i.min||0}"></div><div><label>Restock target</label><input name="restock" type="number" min="0" step="1" value="${i.restock??i.min??0}"></div></div><div class="actions"><button>Save supply</button>${x?`<button type="button" class="danger" onclick="removeItem('${x}')">Delete</button>`:''}</div></form>`)}function saveItem(e,x){e.preventDefault();let f=e.target,z={id:x||id(),name:f.elements.name.value.trim(),type:f.elements.type.value,qty:+f.elements.qty.value,unit:f.elements.unit.value||'pack',min:+f.elements.min.value,restock:+f.elements.restock.value};let old=d.items.find(i=>i.id===x);if(old)Object.assign(old,z);else d.items.push(z);done()}function removeItem(x){if(!confirm('Delete this supply? Existing flavors may reference it.'))return;d.items=d.items.filter(i=>i.id!==x);done()}function adjust(x,sign){let i=d.items.find(i=>i.id===x),v=prompt(`${sign>0?'Add':'Use'} how many ${i.unit||'packs'} of ${i.name}?`,'1');if(v===null)return;let n=Number(v);if(!Number.isFinite(n)||n<=0||sign<0&&i.qty<n){alert('Enter a valid whole number within available stock.');return}i.qty=+(i.qty+sign*n).toFixed(5);save();render()}
@@ -80,7 +119,7 @@ function renderSettings(){$('settings').innerHTML=`<h2>Customize</h2><div class=
 // Freezer and shape-based yields (backwards-compatible with earlier saved data).
 const fmt=n=>Number.isInteger(n)?String(n):Number(n.toFixed(2)).toString();
 const shapeName=x=>d.shapes.find(s=>s.id===x)?.name||'Choose a popper shape';
-const effectiveYield=(r,l)=>Number(d.shapes.find(s=>s.id===l.shape)?.yield)||0;
+let effectiveYield=(r,l)=>Number(d.shapes.find(s=>s.id===l.shape)?.yield)||0;
 const freeKinds={dough:'Cake Dough',finished:'Finished Cake Pops'};
 const freeUnit={oz:'oz',lb:'lb',g:'g',batch:'batches',pops:'pops'};
 const frozenAvailable=(f,excludePlan='')=>Math.max(0,Number(f.qty)||0);
@@ -245,7 +284,7 @@ function ingredientRow(p={}){
  const unit=p.unit||d.items.find(i=>i.id===p.id)?.unit||'';
  const listId='recipe-units-'+Math.random().toString(36).slice(2);
  if(p.id&&d.items.some(i=>i.id===p.id))el.dataset.supplyId=p.id;
- el.innerHTML=`<label>Ingredient name</label><input class="ingredient-name" placeholder="Start typing a supply name..." autocomplete="off" value="${esc(name)}" oninput="delete this.closest('.ingredient').dataset.supplyId;updateIngredientUnitSuggestions(this);recipeSupplyMatches(this)" onfocus="recipeSupplyMatches(this)"><div class="inventory-suggestions" hidden style="margin:7px 0 12px"></div><div class="formgrid"><div><label>Amount Used</label><input class="ingredient-qty" type="text" inputmode="text" autocomplete="off" placeholder="1/4, 1/2, 1 1/2, or 0.25" value="${esc(p.amountText||(p.qty??''))}"></div><div><label>Unit</label><input class="ingredient-unit" list="${listId}" placeholder="Start typing or choose a unit" value="${esc(unit)}" oninput="this.dataset.userChosen='1'"><datalist id="${listId}"></datalist></div></div><div class="unit-suggestions" style="margin-top:9px;margin-bottom:8px"></div><div class="recipe-only-cost" style="margin-top:10px;padding:10px;border:1px solid #ddd;border-radius:10px"><strong class="small">Optional recipe-only pricing</strong><p class="muted small">For ingredients not in My Stock. Enter what you paid and the package size; this affects pricing only, not stock.</p><div class="formgrid"><div><label>Purchase price ($)</label><input class="recipe-cost-price" type="number" min="0" step="0.01" placeholder="e.g. 5.99" value="${esc(p.recipeCostPrice??'')}"></div><div><label>Purchased amount</label><input class="recipe-cost-size" type="text" inputmode="text" placeholder="e.g. 16 or 1/2" value="${esc(p.recipeCostSizeText??(p.recipeCostSize??''))}"></div><div><label>Purchased unit</label><input class="recipe-cost-unit" type="text" placeholder="e.g. oz, lb, cup" value="${esc(p.recipeCostUnit||'')}"></div></div></div><button type="button" class="alt" style="margin-top:7px" onclick="this.parentElement.remove()">Remove ingredient</button>`;
+ el.innerHTML=`<label>Ingredient name</label><input class="ingredient-name" placeholder="Start typing a supply name..." autocomplete="off" value="${esc(name)}" oninput="delete this.closest('.ingredient').dataset.supplyId;updateIngredientUnitSuggestions(this);recipeSupplyMatches(this)" onfocus="recipeSupplyMatches(this)"><div class="inventory-suggestions" hidden style="margin:7px 0 12px"></div><div class="formgrid"><div><label>Amount Used</label><input class="ingredient-qty" type="text" inputmode="text" autocomplete="off" placeholder="1/4, 1/2, 1 1/2, or 0.25" value="${esc(p.amountText||(p.qty??''))}"></div><div><label>Unit</label><input class="ingredient-unit" list="${listId}" placeholder="Start typing or choose a unit" value="${esc(unit)}" oninput="this.dataset.userChosen='1'"><datalist id="${listId}"></datalist></div></div><div class="unit-suggestions" style="margin-top:9px;margin-bottom:8px"></div><details class="recipe-only-cost" style="margin-top:10px;padding:10px;border:1px solid #ddd;border-radius:10px"><summary style="cursor:pointer"><strong class="small">Optional recipe-only pricing</strong></summary><p class="muted small">For ingredients not in My Stock. Enter what you paid and the package size; this affects pricing only, not stock.</p><div class="formgrid"><div><label>Purchase price ($)</label><input class="recipe-cost-price" type="number" min="0" step="0.01" placeholder="e.g. 5.99" value="${esc(p.recipeCostPrice??'')}"></div><div><label>Purchased amount</label><input class="recipe-cost-size" type="text" inputmode="text" placeholder="e.g. 16 or 1/2" value="${esc(p.recipeCostSizeText??(p.recipeCostSize??''))}"></div><div><label>Purchased unit</label><input class="recipe-cost-unit" type="text" placeholder="e.g. oz, lb, cup" value="${esc(p.recipeCostUnit||'')}"></div></div></details><button type="button" class="alt" style="margin-top:7px" onclick="this.parentElement.remove()">Remove ingredient</button>`;
  $('ingredients').append(el);updateIngredientUnitSuggestions(el.querySelector('.ingredient-name'));
 }
 partRow=ingredientRow;
@@ -295,7 +334,7 @@ function requirements(lines){let out={};for(let l of lines||[]){let r=d.recipes.
 function checkRows(lines){return requirements(lines).map(p=>{let i=matchSupply(p),have=Number(i?.qty)||0;return {...p,supply:i,have,buy:Math.max(0,p.required-have),missing:!i}})}
 function stockReport(lines){let rows=checkRows(lines);return rows.length?rows.map(p=>`${p.name}: need ${fmt(p.required)} ${p.unit}, ${p.missing?'not in Supplies':`have ${fmt(p.have)}`}${p.buy>0?`, buy ${fmt(p.buy)}`:', enough in stock'}`).join('\n'):'No recipe ingredients found. Check your selected shapes and recipes.'}
 const oldRenderPlansRecipes=renderPlans;
-renderPlans=function(kind){oldRenderPlansRecipes(kind);for(let p of d[kind]){let card=[...$(kind).querySelectorAll('.card')].find(c=>c.querySelector(`button[onclick="editPlan('${kind}','${p.id}')"]`));if(!card)continue;let rows=checkRows(freshLines(p));let lacking=rows.filter(v=>v.buy>0);card.insertAdjacentHTML('beforeend',`<div class="notice ${lacking.length?'warning':''}">${!rows.length?'No recipe ingredients to check.':lacking.length?`${lacking.length} ingredient(s) need shopping or adding to Supplies.`:'Ingredients available in stock.'}<div class="actions"><button class="alt" onclick="alert(stockReport(freshLines(d['${kind}'].find(p=>p.id==='${p.id}'))))">View ingredient check</button><button class="alt" onclick="shoppingPlanKind='${kind}';shoppingPlanId='${p.id}';go('shopping')">Shopping list</button></div></div>`)} };
+renderPlans=function(kind){oldRenderPlansRecipes(kind);for(let p of d[kind]){let card=[...$(kind).querySelectorAll('.card')].find(c=>c.querySelector(`button[onclick="editPlan('${kind}','${p.id}')"]`));if(!card)continue;let rows=checkRows(freshLines(p));let lacking=rows.filter(v=>v.buy>0);card.insertAdjacentHTML('beforeend',`<div class="notice ${lacking.length?'warning':''}">${!rows.length?'No recipe ingredients to check.':lacking.length?`${lacking.length} ingredient(s) need shopping or adding to Supplies.`:'Ingredients available in stock.'}<div class="actions"><button class="alt" onclick="psShowIngredientCheck('${kind}','${p.id}')">View ingredient check</button><button class="alt" onclick="shoppingPlanKind='${kind}';shoppingPlanId='${p.id}';go('shopping')">Shopping list</button></div></div>`)} };
 let shoppingPlanKind='',shoppingPlanId='';
 renderShopping=function(){let p=d[shoppingPlanKind]?.find(p=>p.id===shoppingPlanId);let general=!p;let rows=general?d.items.filter(i=>!isShapeStockItem(i)&&i.qty<=i.min).map(i=>({name:i.name,unit:i.unit||'pack',required:i.restock??i.min,have:i.qty,buy:Math.max(0,(i.restock??i.min)-i.qty),missing:false})):checkRows(freshLines(p));$('shopping').innerHTML=`<h2>Shopping Lists</h2><div class="card"><label>View list</label><select onchange="shoppingPlanKind=this.value.split(':')[0]||'';shoppingPlanId=this.value.split(':')[1]||'';renderShopping()"><option value="">General restock list</option>${['orders','events'].flatMap(k=>d[k].map(v=>`<option value="${k}:${v.id}" ${shoppingPlanKind===k&&shoppingPlanId===v.id?'selected':''}>${k==='orders'?'Order':'Event'}: ${esc(v.name)}</option>`)).join('')}</select><p class="muted small">${p?'Compares recipe amounts for fresh batches with current Supplies. Missing ingredients are included even if they have never been added to Supplies. No stock is deducted here.':'General low-stock items and restock targets.'}</p></div><div class="card">${rows.length?rows.map(r=>`<div class="item"><div class="row"><strong>${esc(r.name)}</strong><span class="pill">${r.buy>0?'Buy '+fmt(r.buy)+' '+esc(r.unit):'Enough in stock'}</span></div><div class="small muted">${r.missing?'Not in Supplies · ':''}Have ${fmt(r.have)} ${esc(r.unit)} · Need ${fmt(r.required)} ${esc(r.unit)}</div></div>`).join(''):'<p class="muted">Nothing needed on this list.</p>'}</div><button onclick="copyShop()">Copy shopping list</button>`};
 copyShop=function(){let p=d[shoppingPlanKind]?.find(v=>v.id===shoppingPlanId);let rows=p?checkRows(freshLines(p)):d.items.filter(i=>!isShapeStockItem(i)&&i.qty<=i.min).map(i=>({name:i.name,unit:i.unit||'pack',buy:Math.max(0,(i.restock??i.min)-i.qty)}));let s=(p?p.name:'General restock')+'\n'+rows.filter(r=>r.buy>0).map(r=>`${r.name} — buy ${fmt(r.buy)} ${r.unit}`).join('\n');if(navigator.clipboard?.writeText)navigator.clipboard.writeText(s).then(()=>alert('Copied')).catch(()=>prompt('Copy list:',s));else prompt('Copy list:',s)};
@@ -2269,12 +2308,15 @@ const psBeforeOrganizedSettings=renderSettings;
 renderSettings=function(){
  psBeforeOrganizedSettings();
  const root=$('settings');if(!root)return;
+ const guideComplete=!!d.settings?.setupGuideCompleted||(typeof setupSteps==='function'&&setupSteps().every(step=>step.done));
+ const guide={key:'start',label:'Getting Started'};
  const sections=[
-  {key:'start',label:'Getting Started'},
-  {key:'business',label:'Business'},
+  ...(!guideComplete?[guide]:[]),
+  {key:'general',label:'General & Help'},
   {key:'stock',label:'Stock & Freezer'},
+  {key:'business',label:'Business'},
   {key:'backup',label:'Backups & Data'},
-  {key:'general',label:'General & Help'}
+  ...(guideComplete?[guide]:[])
  ];
  const headings={
   'Getting Started Guide':'start','Getting Started':'start','Home screen reminder':'start',
@@ -2300,14 +2342,14 @@ renderSettings=function(){
     content.className='ps-category-list';
     const categoryRows=[...el.querySelectorAll('.category-sort-row')];
     for(const item of categoryRows)content.appendChild(item);
-    const collapsed=sessionStorage.getItem('ps_stock_categories_collapsed')==='1';
+    const collapsed=true;
     content.hidden=collapsed;toggle.textContent=collapsed?'Expand categories':'Collapse categories';
     toggle.setAttribute('aria-expanded',String(!collapsed));
     toggle.addEventListener('click',()=>{
      content.hidden=!content.hidden;
      toggle.textContent=content.hidden?'Expand categories':'Collapse categories';
      toggle.setAttribute('aria-expanded',String(!content.hidden));
-     try{sessionStorage.setItem('ps_stock_categories_collapsed',content.hidden?'1':'0')}catch{}
+     // Start collapsed the next time Settings is opened.
     });
     row.insertAdjacentElement('afterend',toggle);toggle.insertAdjacentElement('afterend',content);
    }
@@ -2664,12 +2706,13 @@ const psDefaultBefore=renderSettings;
 renderSettings=function(){
  psDefaultBefore();
  const host=$('settings');if(!host)return;
- const card=document.createElement('div');card.className='card';card.innerHTML='<h3>Dough & yield defaults</h3><label>Default rolled dough thickness</label><select id="psDefaultDepth">'+psDepthOptions(psDefaultDepth())+'</select><label>Approximate dough weight from one full cake (oz)</label><input id="psBatchOz" type="number" min="0.01" step="any" value="'+esc(d.settings?.batchDoughOz??19.2)+'"><p class="muted small">19.2 oz is a starting example, not a universal cake yield. Weigh your actual finished dough for better estimates. Existing measured popper yields remain unchanged.</p><button type="button" class="alt" id="psSaveDepthDefaults">Save defaults</button>';
+ const card=document.createElement('div');card.className='card';
+ card.innerHTML='<h3>Dough & yield defaults</h3><label>Default rolled dough thickness</label><select id="psDefaultDepth">'+psDepthOptions(psDefaultDepth())+'</select><p class="muted small">Dough weight is recorded during production for each flavor. PopStock uses that flavor’s history for future estimates; no universal batch weight is needed.</p><button type="button" class="alt" id="psSaveDepthDefaults">Save thickness default</button>';
  host.prepend(card);
  card.querySelector('#psSaveDepthDefaults').addEventListener('click',()=>{
-  const depth=Number(card.querySelector('#psDefaultDepth').value),oz=Number(card.querySelector('#psBatchOz').value);
-  if(!psDepths.includes(depth)||!(oz>0)||!Number.isFinite(oz)){alert('Choose a valid thickness and positive batch weight.');return}
-  d.settings||={};d.settings.defaultDoughDepth=depth;d.settings.batchDoughOz=oz;save();render();alert('Dough defaults saved.');
+  const depth=Number(card.querySelector('#psDefaultDepth').value);
+  if(!psDepths.includes(depth)){alert('Choose a valid thickness.');return}
+  d.settings||={};d.settings.defaultDoughDepth=depth;save();render();alert('Thickness default saved.');
  });
 };
 const psDepthBeforeEditShape=editShape;
@@ -2678,18 +2721,16 @@ editShape=function(x=''){
  const form=$('dialogBody')?.querySelector('form');if(!form)return;
  const sh=d.shapes.find(v=>v.id===x)||{};
  const box=document.createElement('div');
- box.innerHTML='<h4>Popper size and estimated yield</h4><label>Popper size</label><select name="psPopSize"><option value="">Custom / not specified</option>'+[['small','Small'],['medium','Medium'],['large','Large'],['xl','Extra Large']].map(([v,label])=>'<option value="'+v+'" '+(sh.popSize===v?'selected':'')+'>'+label+'</option>').join('')+'</select><p class="muted small">Based on approximate dough weights from the Daisy Makes chart. Cakesicle cutters and unusual shapes can weigh differently.</p><div id="psEstimateShape" class="notice"></div><button type="button" class="alt" id="psUseShapeEstimate">Use estimate as shape yield</button>';
+ box.innerHTML='<h4>Popper size and weight reference</h4><label>Popper size</label><select name="psPopSize"><option value="">Custom / not specified</option>'+[['small','Small'],['medium','Medium'],['large','Large'],['xl','Extra Large']].map(([v,label])=>'<option value="'+v+'" '+(sh.popSize===v?'selected':'')+'>'+label+'</option>').join('')+'</select><p class="muted small">Approximate piece weights help estimate yields after dough weight is recorded for a specific flavor.</p><div id="psEstimateShape" class="notice"></div>';
  form.querySelector('.actions')?.insertAdjacentElement('beforebegin',box);
  const refresh=()=>{
-  const size=form.elements.psPopSize.value,depth=Number(form.elements.doughThicknessIn?.value)||psDefaultDepth();
-  const oz=Number(d.settings?.batchDoughOz??19.2);
-  const est=psEstimateYield(size,depth,oz);
-  $('psEstimateShape').textContent=est?'Estimated '+est.yield+' pops from '+oz+' oz of dough ('+est.weight+' oz per pop). Current saved/measured yield: '+form.elements.yield.value+'.':'Select a size to see an estimated yield.';
-  return est;
+  const depthText=form.elements.doughThicknessIn?.value;
+  const depth=depthText?ps6bParseInches(depthText):psDefaultDepth();
+  const measured=Number(form.elements.doughWeightG?.value);
+  const oz=measured>0?measured/28.349523125:ps6bReference(form.elements.psPopSize.value,depth);
+  $('psEstimateShape').textContent=oz>0?'Piece weight: '+oz.toFixed(2)+' oz ('+(measured>0?'your measurement':'Daisy Makes reference')+'). Yield is calculated from this weight and a flavor’s recorded dough weight during production.':'Enter a measured piece weight or select a supported size and thickness.';
  };
- form.elements.psPopSize.addEventListener('change',refresh);
- form.elements.doughThicknessIn?.addEventListener('input',refresh);
- box.querySelector('#psUseShapeEstimate').addEventListener('click',()=>{const est=refresh();if(est&&est.yield>=1)form.elements.yield.value=est.yield;else alert('Choose a size and one of the standard dough depths to estimate yield.')});
+ ['psPopSize','doughThicknessIn','doughWeightG'].forEach(n=>{form.elements[n]?.addEventListener('input',refresh);form.elements[n]?.addEventListener('change',refresh)});
  refresh();
 };
 const psDepthBeforeSaveShape=saveShape;
@@ -2860,43 +2901,601 @@ saveShape=function(e,x){
 };
 
 
-/* Fix live yield preview: use entered piece weight ahead of Daisy Makes reference. */
-const psWeightPreviewEdit=editShape;
-editShape=function(x=''){
- psWeightPreviewEdit(x);
+/* Phase 6C: optional recipe weights and per-production dough history. */
+d.doughHistory ||= [];
+const ps6cBeforeEditFlavor=editFlavor;
+editFlavor=function(x=''){
+ ps6cBeforeEditFlavor(x);
  const form=$('dialogBody')?.querySelector('form');if(!form)return;
- const info=form.querySelector('#psEstimateShape');
- const useButton=form.querySelector('#psUseShapeEstimate');
- if(!info)return;
- const refresh=()=>{
-  const size=form.elements.psPopSize?.value||'';
-  const depthText=form.elements.doughThicknessIn?.value?.trim()||'';
-  const depth=depthText?ps6bParseInches(depthText):psDefaultDepth();
-  const grams=Number(form.elements.doughWeightG?.value);
-  const weight=grams>0&&Number.isFinite(grams)?grams/ps6bGramsPerOz:ps6bReference(size,depth);
-  const batchOz=Number(d.settings?.batchDoughOz??19.2);
-  if(!(weight>0)||!(batchOz>0)){
-   info.textContent='Enter a measured weight per pop or select a reference size and thickness to estimate yield.';
-   if(useButton)useButton.disabled=true;
-   return null;
-  }
-  const count=Math.floor(batchOz/weight);
-  const source=grams>0&&Number.isFinite(grams)?'measured piece weight':'Daisy Makes reference';
-  info.textContent='Estimated '+count+' pops from '+batchOz+' oz of dough using '+source+' ('+weight.toFixed(2)+' oz per pop). Your saved yield is not changed unless you choose to use this estimate.';
-  if(useButton)useButton.disabled=count<1;
-  return count;
- };
- ['doughWeightG','doughThicknessIn','psPopSize'].forEach(name=>{
-  form.elements[name]?.addEventListener('input',refresh);
-  form.elements[name]?.addEventListener('change',refresh);
- });
- if(useButton){
-  // Replace the prior reference-only button listener.
-  const newButton=useButton.cloneNode(true);
-  useButton.replaceWith(newButton);
-  newButton.addEventListener('click',()=>{const count=refresh();if(count!==null&&count>=1)form.elements.yield.value=count;});
+ const r=d.recipes.find(v=>v.id===x)||{};
+ const box=document.createElement('details');box.className='card';
+ box.innerHTML='<summary style="cursor:pointer"><strong>Optional finished dough weight</strong></summary>'+
+ '<p class="muted small">Enter the finished weight of ONE full recipe batch, after mix-ins. Leave blank to build a typical weight from actual production later.</p>'+
+ '<div class="formgrid"><div><label>Typical weight</label><input name="ps6cTypical" type="number" min="0.01" step="any" value="'+esc(r.typicalDoughOz?Number(r.typicalDoughOz).toFixed(2):'')+'"></div>'+
+ '<div><label>Unit</label><select name="ps6cUnit"><option value="oz">oz</option><option value="g">grams</option></select></div></div>'+
+ '<p class="muted small" id="ps6cHistorySummary"></p>';
+ form.querySelector('.actions')?.insertAdjacentElement('beforebegin',box);
+ const unit=box.querySelector('[name="ps6cUnit"]');
+ unit.value='oz';
+ const observations=(d.doughHistory||[]).filter(h=>h.recipeId===x&&!h.exclude&&h.batchCount>0).map(h=>h.weightOz/h.batchCount);
+ if(observations.length){
+  box.querySelector('#ps6cHistorySummary').textContent='Recorded average: '+(observations.reduce((a,b)=>a+b,0)/observations.length).toFixed(2)+' oz per full batch from '+observations.length+' production records.';
  }
- refresh();
+ if(r.typicalDoughOz)box.open=true;
+};
+const ps6cBeforeSaveFlavor=saveFlavor;
+saveFlavor=function(e,x){
+ const input=e.target.elements.ps6cTypical,unit=e.target.elements.ps6cUnit;
+ const raw=input?.value?.trim()||'';
+ const ounces=raw?Number(raw)/(unit?.value==='g'?28.349523125:1):null;
+ if(raw&&!(ounces>0)){e.preventDefault();alert('Enter a positive dough weight or leave it blank.');return}
+ const before=new Set(d.recipes.map(r=>r.id));
+ ps6cBeforeSaveFlavor(e,x);
+ const r=x?d.recipes.find(v=>v.id===x):d.recipes.find(v=>!before.has(v.id));
+ if(r){if(ounces===null)delete r.typicalDoughOz;else r.typicalDoughOz=ounces;save();}
+};
+function ps6cRecipeWeight(recipeId){
+ const r=d.recipes.find(v=>v.id===recipeId);if(!r)return null;
+ const values=(d.doughHistory||[]).filter(h=>h.recipeId===recipeId&&!h.exclude&&h.batchCount>0&&h.weightOz>0).map(h=>h.weightOz/h.batchCount);
+ if(values.length)return {oz:values.reduce((a,b)=>a+b,0)/values.length,source:'Recorded batch average ('+values.length+')'};
+ return r.typicalDoughOz>0?{oz:r.typicalDoughOz,source:'Saved typical recipe weight'}:null;
+}
+function ps6cPieceWeight(shapeId,depth){
+ const shape=d.shapes.find(s=>s.id===shapeId);
+ if(!shape)return null;
+ const measured=Number(shape.doughWeightG);
+ if(measured>0)return {oz:measured/28.349523125,source:'Measured popper weight'};
+ const reference=ps6bReference(shape.popSize,depth);
+ return reference>0?{oz:reference,source:'Daisy Makes approximate reference'}:null;
+}
+const ps6cPreviousProductionCard=productionCard;
+productionCard=function(kind,p){
+ const original=ps6cPreviousProductionCard(kind,p);
+ const section='<details class="card"><summary style="cursor:pointer"><strong>Calculate My Yield</strong></summary>'+
+ '<p class="muted small">Select a flavor and shape from this production plan. Use a saved typical weight or enter the actual finished dough weight. Calculations never change order quantities or deduct inventory.</p>'+
+ '<div class="ps6c-host" data-kind="'+esc(kind)+'" data-id="'+esc(p.id)+'"></div></details>';
+ return original+section;
+};
+const ps6cPreviousRenderProduction=renderProduction;
+renderProduction=function(){
+ ps6cPreviousRenderProduction();
+ const root=$('production');if(!root)return;
+ root.querySelectorAll('.ps6c-host').forEach(host=>{
+  const kind=host.dataset.kind,idValue=host.dataset.id,plan=d[kind]?.find(p=>p.id===idValue);
+  if(!plan)return;
+  const lines=(plan.lines||[]).filter(l=>d.recipes.some(r=>r.id===l.flavor)&&d.shapes.some(s=>s.id===l.shape));
+  if(!lines.length){host.textContent='Add a flavor and popper shape to this plan first.';return}
+  const options=lines.map((l,i)=>'<option value="'+i+'">'+esc(flavorName(l.flavor))+' - '+esc(shapeName(l.shape))+' ('+Number(l.count||0)+' pops)</option>').join('');
+  host.innerHTML='<label>Flavor and popper</label><select class="ps6c-line">'+options+'</select>'+
+   '<label>Actual finished dough weight (optional)</label><div class="formgrid"><input class="ps6c-weight" type="number" min="0.01" step="any" placeholder="Enter after mixing">'+
+   '<select class="ps6c-unit"><option value="oz">oz</option><option value="g">grams</option></select></div>'+
+   '<label>Number of full recipe batches prepared</label><input class="ps6c-batches" type="number" min="0.1" step="any" value="1">'+
+   '<label><input class="ps6c-exclude" type="checkbox"> Exclude this unusual batch from future typical averages</label>'+
+   '<div class="notice ps6c-result" aria-live="polite"></div>'+
+   '<button type="button" class="alt ps6c-save">Record actual dough weight</button>';
+  const lineSelect=host.querySelector('.ps6c-line'),weightInput=host.querySelector('.ps6c-weight'),unit=host.querySelector('.ps6c-unit'),batchesInput=host.querySelector('.ps6c-batches'),result=host.querySelector('.ps6c-result');
+  const current=()=>lines[Number(lineSelect.value)||0];
+  const renderEstimate=()=>{
+   const line=current();const r=d.recipes.find(v=>v.id===line.flavor);
+   const thickness=Number(r?.doughDepthOverride)||psDefaultDepth();
+   const piece=ps6cPieceWeight(line.shape,thickness);
+   const saved=ps6cRecipeWeight(line.flavor);
+   const actual=Number(weightInput.value)>0?Number(weightInput.value)/(unit.value==='g'?28.349523125:1):null;
+   const batches=Number(batchesInput.value);
+   const validBatches=Number.isFinite(batches)&&batches>0;
+   const total=actual!==null?actual:(saved&&validBatches?saved.oz*batches:null);
+   const yieldCount=piece&&total>0?Math.floor(total/piece.oz):null;
+   result.textContent=yieldCount===null?'No reliable estimate yet. Enter actual dough weight, or save a typical recipe weight and a measured/reference popper weight.':
+    'Estimated '+yieldCount+' pops ('+(actual!==null?'actual batch weight':saved.source)+', '+piece.source+'). Order needs '+Number(line.count||0)+'. Additional pops needed: '+Math.max(0,Number(line.count||0)-yieldCount)+'.';
+  };
+  [lineSelect,weightInput,unit,batchesInput].forEach(input=>input.addEventListener('input',renderEstimate));
+  host.querySelector('.ps6c-save').addEventListener('click',()=>{
+   const line=current(),amount=Number(weightInput.value),batches=Number(batchesInput.value);
+   if(!(amount>0)||!(batches>0)||!Number.isFinite(amount)||!Number.isFinite(batches)){alert('Enter actual finished dough weight and positive recipe batch count first.');return}
+   const oz=amount/(unit.value==='g'?28.349523125:1);
+   d.doughHistory.push({id:id(),recipeId:line.flavor,shapeId:line.shape,planKind:kind,planId:idValue,date:new Date().toISOString(),weightOz:oz,batchCount:batches,exclude:host.querySelector('.ps6c-exclude').checked});
+   save();renderEstimate();alert('Batch weight recorded. Your original recipe, order quantities and inventory were not changed.');
+  });
+  renderEstimate();
+ });
 };
 
-save();render();psWelcomeFirstLaunch();if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(console.warn));</script></body></html>
+
+/* Keep dough/yield defaults in the existing Stock & Freezer settings subcategory. */
+const psYieldSettingsBefore=renderSettings;
+renderSettings=function(){
+ psYieldSettingsBefore();
+ const root=$('settings');if(!root)return;
+ const panel=root.querySelector('[data-settings-panel="stock"]');
+ const card=[...root.querySelectorAll('.card')].find(el=>el.querySelector('h3')?.textContent.trim()==='Dough & yield defaults');
+ if(panel&&card&&card.parentElement!==panel)panel.appendChild(card);
+};
+
+
+/* Phase 6C: first-use large popper default and measured completion history. */
+const ps6cKnownShapeSave=saveShape;
+saveShape=function(e,x){
+ const entered=Number(e.target.elements.yield?.value);
+ const isNew=!x,large=e.target.elements.psPopSize?.value==='large';
+ ps6cKnownShapeSave(e,x);
+ if(isNew&&large){
+  const sh=d.shapes[d.shapes.length-1];
+  if(sh){sh.yieldKnown=entered!==20;sh.yield=entered>0?entered:20;save();}
+ }
+};
+const ps6cKnownShapeEdit=editShape;
+editShape=function(x=''){
+ ps6cKnownShapeEdit(x);
+ if(x)return;
+ const form=$('dialogBody')?.querySelector('form');
+ if(!form)return;
+ const size=form.elements.psPopSize,yieldField=form.elements.yield;
+ if(!size||!yieldField)return;
+ const hint=document.createElement('p');hint.className='muted small';
+ hint.textContent='New large poppers with unknown yields use 20 pops per full cake as a planning estimate. Record actual yield after production.';
+ size.after(hint);
+ size.addEventListener('change',()=>{if(size.value==='large'&&Number(yieldField.value)===20)hint.hidden=false;else hint.hidden=true;});
+ hint.hidden=size.value!=='large';
+};
+const ps6cKnownEffectiveYield=effectiveYield;
+effectiveYield=function(recipe,line){
+ const shape=d.shapes.find(sh=>sh.id===line.shape);
+ if(!shape)return ps6cKnownEffectiveYield(recipe,line);
+ const records=(d.doughHistory||[]).filter(h=>h.recipeId===recipe.id&&h.shapeId===shape.id&&h.finishedPops>0&&h.batchCount>0&&!h.exclude);
+ if(records.length){
+  return Math.max(1,Math.floor(records.reduce((sum,h)=>sum+h.finishedPops/h.batchCount,0)/records.length));
+ }
+ if(shape.popSize==='large'&&shape.yieldKnown===false)return 20;
+ return ps6cKnownEffectiveYield(recipe,line)||((shape.popSize==='large')?20:0);
+};
+const ps6cBeforeOrderComplete=complete;
+complete=function(kind,x){
+ const p=d[kind]?.find(v=>v.id===x);
+ if(kind!=='orders'||!p||p.status!=='In progress')return ps6cBeforeOrderComplete(kind,x);
+ const lines=(p.lines||[]).filter(l=>d.recipes.some(r=>r.id===l.flavor)&&d.shapes.some(sh=>sh.id===l.shape));
+ if(!lines.length)return ps6cBeforeOrderComplete(kind,x);
+ const unique=[...new Map(lines.map(l=>[l.flavor+'|'+l.shape,l])).values()];
+ const fields=unique.map((l,i)=>'<fieldset class="card"><legend>'+esc(flavorName(l.flavor))+' / '+esc(shapeName(l.shape))+'</legend>'+
+ '<label>Actual finished dough weight (optional)</label><div class="formgrid"><input name="weight_'+i+'" type="number" min="0.01" step="any" placeholder="e.g. 29"><select name="unit_'+i+'"><option value="oz">oz</option><option value="g">grams</option></select></div>'+
+ '<label>Finished shapes made (optional)</label><input name="count_'+i+'" type="number" min="1" step="1" placeholder="e.g. 24">'+
+ '<label>Standard recipe batches prepared</label><input name="batches_'+i+'" type="number" min="0.1" step="any" value="1">'+
+ '<label><input type="checkbox" name="exclude_'+i+'"> Unusual batch (exclude from future averages)</label></fieldset>').join('');
+ modal('Complete order — record actual yield',
+ '<p class="muted small">Capture measurements to improve future estimates for each flavor and shape. Optional: leave blank if not measured. No changes to stock or recipe ingredients.</p>'+
+ '<form id="ps6cCompletion" onsubmit="ps6cSaveOrderCompletion(event,\''+x+'\')">'+fields+
+ '<div class="actions"><button type="submit">Record and finish order</button><button type="button" class="alt" onclick="document.getElementById(\'dialog\').close()">Not yet</button></div></form>');
+};
+function ps6cSaveOrderCompletion(e,x){
+ e.preventDefault();
+ const p=d.orders.find(v=>v.id===x);if(!p||p.status!=='In progress')return;
+ const lines=[...new Map((p.lines||[]).filter(l=>d.recipes.some(r=>r.id===l.flavor)&&d.shapes.some(sh=>sh.id===l.shape)).map(l=>[l.flavor+'|'+l.shape,l])).values()];
+ const newRecords=[];
+ for(let i=0;i<lines.length;i++){
+  const l=lines[i],f=e.target;
+  const rawWeight=f.elements['weight_'+i].value.trim(),rawCount=f.elements['count_'+i].value.trim();
+  const count=Number(rawCount),batches=Number(f.elements['batches_'+i].value);
+  const ounces=Number(rawWeight)/(f.elements['unit_'+i].value==='g'?28.349523125:1);
+  if(!(batches>0)||rawCount&&(!Number.isInteger(count)||count<1)||rawWeight&&!(ounces>0)){alert('Check your weight, finished shape count and recipe batch count.');return}
+  if(rawWeight||rawCount)newRecords.push({id:id(),recipeId:l.flavor,shapeId:l.shape,planKind:'orders',planId:x,date:new Date().toISOString(),weightOz:rawWeight?ounces:null,finishedPops:rawCount?count:null,batchCount:batches,exclude:f.elements['exclude_'+i].checked});
+ }
+ d.doughHistory||=[];
+ // Completion is idempotent: do not duplicate measurements on repeated clicks.
+ d.doughHistory.push(...newRecords);
+ ps6cBeforeOrderComplete('orders',x);
+ $('dialog').close();
+}
+
+
+/* Phase 6C streamlined Plan > Prepare > Finish > Learn. Prep readings are drafts, not historical observations. */
+d.productionDoughDrafts ||= {};
+function ps6cDraftKey(kind,planId,line){return kind+':'+planId+':'+line.flavor+':'+line.shape}
+const ps6cStreamRender=renderProduction;
+renderProduction=function(){
+ ps6cStreamRender();
+ document.querySelectorAll('.ps6c-host').forEach(host=>{
+  const kind=host.dataset.kind,planId=host.dataset.id,plan=d[kind]?.find(p=>p.id===planId);
+  const lines=(plan?.lines||[]).filter(l=>d.recipes.some(r=>r.id===l.flavor)&&d.shapes.some(sh=>sh.id===l.shape));
+  if(!lines.length)return;
+  const chooser=host.querySelector('.ps6c-line'),weight=host.querySelector('.ps6c-weight'),unit=host.querySelector('.ps6c-unit'),batches=host.querySelector('.ps6c-batches');
+  const saveButton=host.querySelector('.ps6c-save');if(!chooser||!weight||!saveButton)return;
+  saveButton.textContent='Save prep weight for completion';
+  // Replace original save handler: prep should not create a history observation.
+  const fresh=saveButton.cloneNode(true);saveButton.replaceWith(fresh);
+  const load=()=>{
+   const line=lines[Number(chooser.value)||0],record=d.productionDoughDrafts[ps6cDraftKey(kind,planId,line)];
+   weight.value=record?.weight??'';unit.value=record?.unit||'oz';batches.value=record?.batches||1;
+   weight.dispatchEvent(new Event('input',{bubbles:true}));
+  };
+  chooser.addEventListener('change',load);
+  fresh.addEventListener('click',()=>{
+   const line=lines[Number(chooser.value)||0],w=Number(weight.value),n=Number(batches.value);
+   if(!(w>0)||!(n>0)){alert('Enter a positive finished dough weight and number of recipe batches.');return}
+   d.productionDoughDrafts[ps6cDraftKey(kind,planId,line)]={weight:w,unit:unit.value,batches:n,date:new Date().toISOString()};
+   save();alert('Prep weight saved. It will be filled in when you complete this order.');
+  });
+  load();
+ });
+};
+const ps6cStreamCompletion=complete;
+complete=function(kind,x){
+ ps6cStreamCompletion(kind,x);
+ if(kind!=='orders')return;
+ const form=$('ps6cCompletion'),plan=d.orders.find(p=>p.id===x);
+ if(!form||!plan)return;
+ const lines=[...new Map((plan.lines||[]).filter(l=>d.recipes.some(r=>r.id===l.flavor)&&d.shapes.some(sh=>sh.id===l.shape)).map(l=>[l.flavor+'|'+l.shape,l])).values()];
+ lines.forEach((line,i)=>{
+  const draft=d.productionDoughDrafts[ps6cDraftKey(kind,x,line)];
+  const count=form.elements['count_'+i],w=form.elements['weight_'+i];
+  if(count){count.required=true;count.previousElementSibling.textContent='How many pops did you actually make?';}
+  if(draft){w.value=draft.weight;form.elements['unit_'+i].value=draft.unit;form.elements['batches_'+i].value=draft.batches;}
+  const record=(d.doughHistory||[]).filter(h=>h.recipeId===line.flavor&&h.shapeId===line.shape&&h.finishedPops>0&&!h.exclude);
+  const hint=document.createElement('p');hint.className='muted small';
+  hint.textContent=record.length?'Planning yield is based on '+record.length+' recorded batch'+(record.length===1?'':'es')+'.':'No completed yield history yet. The first large-popper planning estimate is 20 pops per cake.';
+  count?.after(hint);
+ });
+};
+const ps6cStreamCompleteSave=ps6cSaveOrderCompletion;
+ps6cSaveOrderCompletion=function(e,x){
+ const plan=d.orders.find(p=>p.id===x);
+ if(!plan)return;
+ const lines=[...new Map((plan.lines||[]).filter(l=>d.recipes.some(r=>r.id===l.flavor)&&d.shapes.some(sh=>sh.id===l.shape)).map(l=>[l.flavor+'|'+l.shape,l])).values()];
+ for(let i=0;i<lines.length;i++){
+  if(!(Number(e.target.elements['count_'+i]?.value)>0)){
+   e.preventDefault();alert('Enter how many finished pops you made for each flavor and shape.');return;
+  }
+ }
+ ps6cStreamCompleteSave(e,x);
+ if(plan.status==='Completed'){
+  lines.forEach(l=>delete d.productionDoughDrafts[ps6cDraftKey('orders',x,l)]);
+  save();
+ }
+};
+
+
+/* Recovery screen remains available even if a later UI renderer throws. */
+function psEmergencyRecovery(error){
+ const root=document.querySelector('main')||document.body;
+ if(document.getElementById('ps-safe-recovery'))return;
+ const wrap=document.createElement('section');wrap.id='ps-safe-recovery';wrap.style.cssText='display:block;padding:16px;margin:16px;background:white;border:2px solid #a7617b;border-radius:12px;color:#242424';
+ const title=document.createElement('h2');title.textContent='PopStock Safe Recovery';wrap.append(title);
+ const desc=document.createElement('p');desc.textContent='The app could not load its menus. Your existing browser data has not been erased. Export it before importing any backup.';wrap.append(desc);
+ const counts=document.createElement('p');
+ try{counts.textContent='Current browser records: '+['items','recipes','orders','events','shapes'].map(k=>k+': '+(Array.isArray(d[k])?d[k].length:0)).join(' · ');}catch(e){counts.textContent='Cannot read current browser record counts.';}
+ wrap.append(counts);
+ const exportButton=document.createElement('button');exportButton.type='button';exportButton.textContent='Download current browser backup';
+ exportButton.onclick=()=>{
+  try{
+   const raw=localStorage.getItem(NEW);if(!raw){alert('No previous saved browser backup found.');return;}
+   const url=URL.createObjectURL(new Blob([raw],{type:'application/json'}));const a=document.createElement('a');
+   a.href=url;a.download='popstock-before-recovery-'+new Date().toISOString().slice(0,10)+'.json';
+   document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);
+  }catch(e){alert('Backup export error: '+e.message)}
+ };
+ wrap.append(exportButton);
+ const heading=document.createElement('h3');heading.textContent='Restore a verified backup';wrap.append(heading);
+ const explain=document.createElement('p');explain.textContent='Choose a JSON file to preview its record counts first. Import replaces the saved data in this browser only, so export your current copy if it contains information you want to keep.';wrap.append(explain);
+ const file=document.createElement('input');file.type='file';file.accept='.json,application/json';wrap.append(file);
+ const preview=document.createElement('p');wrap.append(preview);
+ const restoreButton=document.createElement('button');restoreButton.type='button';restoreButton.textContent='Restore this backup';restoreButton.disabled=true;wrap.append(restoreButton);
+ let pending=null;
+ file.onchange=async()=>{
+  restoreButton.disabled=true;pending=null;preview.textContent='';
+  try{
+   const obj=JSON.parse(await file.files[0].text());
+   if(!obj||!['items','recipes','orders','events','shapes'].every(k=>Array.isArray(obj[k])))throw Error('This is not a complete PopStock data backup.');
+   const total=['items','recipes','orders','events','shapes'].reduce((n,k)=>n+obj[k].length,0);
+   if(total===0)throw Error('This backup contains no business records and is blocked to protect your data.');
+   pending=obj;preview.textContent='Backup contains: '+['items','recipes','orders','events','shapes'].map(k=>k+': '+obj[k].length).join(' · ');
+   restoreButton.disabled=false;
+  }catch(e){preview.textContent='Cannot use this file: '+e.message;}
+ };
+ restoreButton.onclick=()=>{
+  if(!pending)return;
+  const current=localStorage.getItem(NEW);
+  if(current){
+   try{
+    const old=JSON.parse(current),oldCount=['items','recipes','orders','events','shapes'].reduce((n,k)=>n+(old[k]?.length||0),0);
+    if(oldCount>0&&!confirm('This browser already has '+oldCount+' business records. Have you downloaded its backup? Restoring will replace them.'))return;
+   }catch(e){if(!confirm('Existing browser data could not be read. Restoring will replace it. Continue only if you have a backup.'))return;}
+  }
+  if(!confirm('Restore the previewed PopStock backup in THIS browser?'))return;
+  try{localStorage.setItem(NEW,JSON.stringify(pending));location.reload();}catch(e){alert('Restore failed: '+e.message);}
+ };
+ root.prepend(wrap);
+}
+
+
+/* Order editor: prioritize planning flavors and collapse optional freezer reservations. */
+const psOrderFirstEditPlan=editPlan;
+editPlan=function(kind,x=''){
+ psOrderFirstEditPlan(kind,x);
+ if(kind!=='orders')return;
+ const form=$('dialogBody')?.querySelector('form'),lines=form?.querySelector('#planlines'),reservations=form?.querySelector('#allocations');
+ if(!form||!lines||!reservations)return;
+ const addFlavor=[...form.querySelectorAll('button')].find(b=>b.textContent.trim().includes('Add flavor'));
+ const reserveButton=[...form.querySelectorAll('button')].find(b=>b.textContent.trim().includes('Reserve frozen pops'));
+ const heading=[...form.querySelectorAll('h3')].find(h=>h.textContent.includes('Reserve finished freezer pops'));
+ if(!addFlavor||!reserveButton||!heading)return;
+ const description=heading.nextElementSibling;
+ const existing=reservations.querySelectorAll('.allocation').length;
+ const details=document.createElement('details');details.className='card';
+ const summary=document.createElement('summary');summary.style.cursor='pointer';
+ summary.innerHTML='<strong>Reserve frozen pops (optional)</strong>'+ (existing?' <span class="muted small">('+existing+' already reserved)</span>':'');
+ details.append(summary);
+ const note=document.createElement('p');note.className='muted small';
+ note.textContent='Only use this if you already have finished pops in your freezer. Frozen reservations reduce the number you need to make fresh.';
+ details.append(note,reservations,reserveButton);
+ heading.remove();
+ if(description&&description.tagName==='P'&&description.textContent.includes('Reserve pops already made'))description.remove();
+ addFlavor.insertAdjacentElement('afterend',details);
+ // Keep reservations collapsed when first opening or reopening the order.
+ details.open=false;
+ reserveButton.addEventListener('click',()=>{summary.innerHTML='<strong>Reserve frozen pops (optional)</strong> <span class="muted small">('+reservations.querySelectorAll('.allocation').length+' selected)</span>';});
+};
+
+
+/* Phase 6C planning visibility: show the provenance of yields beside each order line. */
+const ps6cPlanExplainEdit=editPlan;
+editPlan=function(kind,x=''){
+ ps6cPlanExplainEdit(kind,x);
+ if(kind!=='orders')return;
+ const form=$('dialogBody')?.querySelector('form'),holder=form?.querySelector('#planlines');
+ if(!holder)return;
+ const explain=()=>{
+  holder.querySelectorAll('.planline').forEach(row=>{
+   const flavor=row.querySelector('.flavor')?.value,shapeId=row.querySelector('.shape')?.value;
+   let info=row.querySelector('.ps6c-plan-info');
+   if(!info){info=document.createElement('p');info.className='muted small ps6c-plan-info';row.append(info);}
+   const recipe=d.recipes.find(r=>r.id===flavor),shape=d.shapes.find(s=>s.id===shapeId);
+   if(!recipe||!shape){info.textContent='Select a flavor and shape to see your planning yield.';return;}
+   const records=(d.doughHistory||[]).filter(h=>h.recipeId===flavor&&h.shapeId===shapeId&&h.finishedPops>0&&h.batchCount>0&&!h.exclude);
+   const each=effectiveYield(recipe,{flavor,shape:shapeId});
+   const count=Math.max(0,Number(row.querySelector('.count')?.value)||0);
+   const batches=each>0?Math.ceil(count/each):null;
+   const origin=records.length?'Based on '+records.length+' recorded production '+(records.length===1?'batch':'batches'):
+    shape.popSize==='large'&&shape.yieldKnown===false?'First-time large popper estimate':
+    'Saved shape yield (not yet measured for this flavor)';
+   info.textContent=(each>0?each+' pops per recipe batch · '+batches+' '+(batches===1?'batch':'batches')+' planned':'Yield unknown')+' · '+origin+'.';
+  });
+ };
+ holder.addEventListener('input',explain);
+ holder.addEventListener('change',explain);
+ const observer=new MutationObserver(explain);
+ observer.observe(holder,{childList:true});
+ const dialog=$('dialog');
+ dialog?.addEventListener('close',()=>observer.disconnect(),{once:true});
+ explain();
+};
+
+
+/* Readable ingredient check: individual rows with amounts and inventory status. */
+function psShowIngredientCheck(kind,planId){
+ const plan=d[kind]?.find(p=>p.id===planId);
+ if(!plan)return alert('Order or event not found.');
+ const rows=checkRows(freshLines(plan)).slice().sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+ const html=rows.length?'<div style="display:grid;gap:9px">'+rows.map(r=>{
+  const missing=!!r.missing||Number(r.buy)>0;
+  const status=r.missing?(r.unitMismatch?'Inventory unit mismatch':'Not in My Stock'):
+   Number(r.buy)>0?'Buy '+fmt(r.buy)+' '+esc(r.unit):'Enough in stock';
+  return '<div class="card" style="margin:0;padding:12px"><strong>'+esc(r.name)+'</strong>'+
+   '<div class="small" style="margin-top:6px">Needed: <strong>'+fmt(r.required)+' '+esc(r.unit)+'</strong></div>'+
+   '<div class="small">On hand: '+fmt(r.have)+' '+esc(r.unit)+'</div>'+
+   '<div class="small" style="margin-top:3px">'+(missing?'Needs attention: ':'Ready: ')+esc(status)+'</div></div>';
+ }).join('')+'</div>':
+ '<p class="muted">No recipe ingredients found for this plan.</p>';
+ modal('Ingredient Check — '+(plan.name||'Order'),'<p class="muted small">Ingredients needed for the fresh pops in this order, compared with current stock.</p>'+html+
+ '<div class="actions"><button type="button" class="alt" onclick="document.getElementById(\'dialog\').close()">Close</button></div>');
+}
+
+
+/* Phase 6C UX: prioritize actual pop counts, hide advanced completion options. */
+const ps6cFriendlyFinishBefore=complete;
+complete=function(kind,x){
+ ps6cFriendlyFinishBefore(kind,x);
+ if(kind!=='orders')return;
+ const form=$('ps6cCompletion');if(!form)return;
+ const sets=[...form.querySelectorAll('fieldset')];
+ const intro=form.querySelector('p.muted');
+ if(intro)intro.textContent='Finish your order in one step: enter the number of pops you actually made. Dough weight is optional and automatically filled from prep when available.';
+ sets.forEach(set=>{
+  const count=set.querySelector('input[name^="count_"]');
+  const weight=set.querySelector('input[name^="weight_"]');
+  const batch=set.querySelector('input[name^="batches_"]');
+  const exclude=set.querySelector('input[name^="exclude_"]');
+  if(!count)return;
+  count.required=true;
+  const countLabel=count.previousElementSibling;
+  if(countLabel?.tagName==='LABEL')countLabel.textContent='How many pops did you actually make?';
+  const countBlock=document.createElement('div');countBlock.className='ps6c-main-count';
+  if(countLabel)countBlock.append(countLabel);
+  countBlock.append(count);
+  set.prepend(countBlock);
+  if(weight){
+   const weightLabel=[...set.querySelectorAll('label')].find(el=>el.textContent.includes('Actual finished dough weight'));
+   if(weightLabel)weightLabel.textContent='Finished dough weight (optional, prefilled from prep)';
+  }
+  const advanced=document.createElement('details');advanced.className='card';
+  advanced.style.marginTop='10px';
+  const summary=document.createElement('summary');summary.style.cursor='pointer';summary.textContent='Advanced batch options (optional)';
+  advanced.append(summary);
+  if(batch){
+   const batchLabel=batch.previousElementSibling;
+   if(batchLabel?.tagName==='LABEL')advanced.append(batchLabel);
+   advanced.append(batch);
+  }
+  if(exclude){
+   const excludeLabel=exclude.closest('label');
+   if(excludeLabel)advanced.append(excludeLabel);
+  }
+  set.append(advanced);
+ });
+ const saveButton=form.querySelector('button[type="submit"]');
+ if(saveButton)saveButton.textContent='Finish order & save production results';
+};
+
+
+/* Phase 6D: advisory production targets, separate from customer order quantities and stock deductions. */
+const ps6dBeforeEditPlan=editPlan;
+editPlan=function(kind,x=''){
+ ps6dBeforeEditPlan(kind,x);
+ if(kind!=='orders')return;
+ const form=$('dialogBody')?.querySelector('form'),holder=form?.querySelector('#planlines');
+ if(!holder)return;
+ const update=()=>{
+  holder.querySelectorAll('.planline').forEach(row=>{
+   const recipe=d.recipes.find(r=>r.id===row.querySelector('.flavor')?.value);
+   const shape=d.shapes.find(sh=>sh.id===row.querySelector('.shape')?.value);
+   let box=row.querySelector('.ps6d-advice');
+   if(!box){
+    box=document.createElement('details');box.className='ps6d-advice';box.style.marginTop='9px';
+    box.innerHTML='<summary style="cursor:pointer">Production suggestion (optional)</summary><p class="muted small ps6d-text"></p><label>Manual production target (optional; does not change the customer order)</label><input class="ps6d-override" type="number" min="1" step="1" placeholder="Use calculated suggestion"><p class="muted small ps6d-final"></p>';
+    row.append(box);
+   }
+   const text=box.querySelector('.ps6d-text'),result=box.querySelector('.ps6d-final'),override=box.querySelector('.ps6d-override');
+   if(!recipe||!shape){text.textContent='Select a flavor and shape first.';result.textContent='';return;}
+   const qty=Number(row.querySelector('.count')?.value)||0;
+   const depth=Number(recipe.doughDepthOverride)||psDefaultDepth();
+   const piece=ps6cPieceWeight(shape.id,depth),weight=ps6cRecipeWeight(recipe.id);
+   const records=(d.doughHistory||[]).filter(h=>h.recipeId===recipe.id&&h.shapeId===shape.id&&h.finishedPops>0&&h.batchCount>0&&!h.exclude);
+   const yieldCount=records.length?effectiveYield(recipe,{shape:shape.id}):weight&&piece?Math.floor(weight.oz/piece.oz):effectiveYield(recipe,{shape:shape.id});
+   const batches=yieldCount>0?Math.ceil(qty/yieldCount):null;
+   const suggested=batches===null?null:batches*yieldCount;
+   const origin=records.length?'Recorded production history ('+records.length+' '+(records.length===1?'batch':'batches')+')':weight&&piece?weight.source+' and '+piece.source:'Saved shape yield or planning estimate';
+   text.textContent=suggested===null?'A production estimate is unavailable until a shape yield or weight is recorded.':'For '+qty+' ordered pops, '+batches+' recipe '+(batches===1?'batch':'batches')+' could produce about '+suggested+' pops ('+yieldCount+' per batch). '+origin+'.';
+   const custom=Number(override.value);
+   result.textContent=custom>0?'Manual target: '+Math.floor(custom)+' pops. Customer order stays '+qty+'.':'Customer order stays '+qty+' pops. Suggestions do not change ingredient deductions or pricing.';
+  });
+ };
+ holder.addEventListener('input',update);holder.addEventListener('change',update);
+ const obs=new MutationObserver(update);obs.observe(holder,{childList:true});
+ $('dialog')?.addEventListener('close',()=>obs.disconnect(),{once:true});
+ update();
+};
+
+
+/* Phase 6D: real-time planned versus actual counts at order completion. */
+const ps6dBeforeFinishComparison=complete;
+complete=function(kind,x){
+ ps6dBeforeFinishComparison(kind,x);
+ if(kind!=='orders')return;
+ const form=$('ps6cCompletion'),plan=d.orders.find(p=>p.id===x);
+ if(!form||!plan)return;
+ const counts=new Map();
+ (plan.lines||[]).forEach(l=>{
+  const key=l.flavor+'|'+l.shape;
+  counts.set(key,(counts.get(key)||0)+(Number(l.count)||0));
+ });
+ const rows=[...new Map((plan.lines||[]).filter(l=>d.recipes.some(r=>r.id===l.flavor)&&d.shapes.some(sh=>sh.id===l.shape)).map(l=>[l.flavor+'|'+l.shape,l])).values()];
+ const sets=[...form.querySelectorAll('fieldset')];
+ const summaries=[];
+ rows.forEach((line,i)=>{
+  const field=sets[i],input=form.elements['count_'+i];
+  if(!field||!input)return;
+  const planned=counts.get(line.flavor+'|'+line.shape)||0;
+  const box=document.createElement('div');box.className='ps6d-comparison';
+  box.style.cssText='padding:10px;margin:10px 0;border:1px solid #ddd;border-radius:10px';
+  box.innerHTML='<strong>Production comparison</strong><div class="formgrid" style="margin-top:8px"><div>Planned<br><strong class="ps6d-planned"></strong></div><div>Actual<br><strong class="ps6d-actual"></strong></div><div>Difference<br><strong class="ps6d-difference"></strong></div></div>';
+  const countBlock=input.closest('.ps6c-main-count');
+  (countBlock||input).insertAdjacentElement('afterend',box);
+  summaries.push({input,planned,box});
+ });
+ if(!summaries.length)return;
+ const overall=document.createElement('div');overall.className='card';
+ overall.innerHTML='<strong>Order total</strong><p class="ps6d-overall muted small"></p><p class="muted small">Actual counts are saved to production history. This comparison does not alter ordered quantities, costing, stock deductions or freezer quantities.</p>';
+ form.insertBefore(overall,form.querySelector('.actions'));
+ const redraw=()=>{
+  let plannedTotal=0,actualTotal=0,allFilled=true;
+  summaries.forEach(({input,planned,box})=>{
+   const raw=input.value.trim(),actual=raw===''?null:Number(raw),valid=actual!==null&&Number.isInteger(actual)&&actual>=1;
+   plannedTotal+=planned;
+   if(valid)actualTotal+=actual;else allFilled=false;
+   box.querySelector('.ps6d-planned').textContent=planned+' pops';
+   box.querySelector('.ps6d-actual').textContent=valid?actual+' pops':'Not entered';
+   const difference=valid?actual-planned:null;
+   box.querySelector('.ps6d-difference').textContent=difference===null?'—':difference===0?'On target':(difference>0?'+':'')+difference+' pops';
+  });
+  const delta=actualTotal-plannedTotal;
+  overall.querySelector('.ps6d-overall').textContent=allFilled?'Planned '+plannedTotal+' · Actual '+actualTotal+' · '+(delta===0?'On target':(delta>0?'+':'')+delta+' pops'):'Planned '+plannedTotal+' pops · Enter actual counts for every flavor to see the final difference.';
+ };
+ summaries.forEach(v=>v.input.addEventListener('input',redraw));
+ redraw();
+};
+
+
+/* Phase 6D: make Production a first-class destination, align Orders status sections,
+   and collect production checklist/measurements through the existing stock-safe finish path. */
+if(!popPrimaryTabs.some(v=>v[0]==='production'))popPrimaryTabs.splice(popPrimaryTabs.findIndex(v=>v[0]==='orders')+1,0,['production','Production']);
+const ps6dGroupedPlansBefore=renderPlans;
+renderPlans=function(kind){
+ ps6dGroupedPlansBefore(kind);
+ if(kind!=='orders')return;
+ const root=$('orders');if(!root)return;
+ const cards=[...root.children].filter(el=>el.classList.contains('card'));
+ const byStatus={active:[],planned:[],completed:[]};
+ cards.forEach(card=>{
+  const edit=card.querySelector('button[onclick^="editPlan"]');
+  const match=edit?.getAttribute('onclick')?.match(/editPlan\('orders','([^']+)'\)/);
+  const plan=match&&d.orders.find(p=>p.id===match[1]);
+  if(!plan)return;
+  const key=plan.status==='Completed'?'completed':plan.status==='In progress'?'active':'planned';
+  byStatus[key].push({card,plan});
+ });
+ const group=(title,key)=>{
+  const section=document.createElement('section');
+  section.className='ps-order-status-group';
+  section.style.cssText='display:block;margin:20px 0';
+  const heading=document.createElement('h3');
+  heading.textContent=title+' ('+byStatus[key].length+')';
+  section.append(heading);
+  byStatus[key].sort((a,b)=>String(a.plan.date||'').localeCompare(String(b.plan.date||'')));
+  if(key==='completed')byStatus[key].reverse();
+  byStatus[key].forEach(v=>section.append(v.card));
+  if(!byStatus[key].length){const empty=document.createElement('p');empty.className='muted small';empty.textContent='Nothing here right now.';section.append(empty);}
+  root.append(section);
+ };
+ group('In production','active');group('Planned','planned');group('Completed','completed');
+};
+const ps6dPriorFinishForm=popFinishOrder;
+popFinishOrder=function(x){
+ ps6dPriorFinishForm(x);
+ const form=$('dialogBody')?.querySelector('form');
+ const p=d.orders.find(v=>v.id===x);
+ if(!form||!p||p.status!=='In progress')return;
+ const checklist=document.createElement('fieldset');checklist.className='card';
+ checklist.innerHTML='<legend>Production checklist</legend><p class="muted small">Confirm each production stage before completing this order.</p>'+
+  productionStepNames.map((name,i)=>'<label style="display:block;margin:8px 0"><input class="ps6d-step" type="checkbox" data-step="'+i+'" '+(d.productionSteps[productionRecordKey('orders',x)]?.[i]?'checked':'')+'> '+esc(name)+'</label>').join('');
+ form.insertBefore(checklist,form.querySelector('button[type="submit"],button:not([type])'));
+ const details=document.createElement('details');details.className='card';
+ details.innerHTML='<summary style="cursor:pointer"><strong>Dough weights & batch details (optional)</strong></summary><p class="muted small">Record finished dough weights for more accurate future yield predictions.</p>';
+ (p.lines||[]).forEach((line,i)=>{
+  const draft=d.productionDoughDrafts?.[ps6cDraftKey('orders',x,line)];
+  const el=document.createElement('div');el.className='pair';
+  el.innerHTML='<strong>'+esc(flavorName(line.flavor))+' · '+esc(shapeName(line.shape))+'</strong><label>Finished dough weight (oz)</label><input type="number" min="0.01" step="any" class="ps6d-dough" data-line="'+i+'" value="'+(draft?.weightOz>0?draft.weightOz:'')+'"><label>Recipe batches prepared</label><input type="number" min="0.1" step="any" class="ps6d-batches" data-line="'+i+'" value="'+(draft?.batches>0?draft.batches:1)+'">';
+  details.append(el);
+ });
+ form.insertBefore(details,form.querySelector('button[type="submit"],button:not([type])'));
+};
+const ps6dPriorActualSave=popSaveActual;
+popSaveActual=function(e,x){
+ const p=d.orders.find(v=>v.id===x);
+ const form=e.target;
+ const values=[...form.querySelectorAll('.pop-actual')].map(v=>Number(v.value));
+ const steps=[...form.querySelectorAll('.ps6d-step')].map(v=>v.checked);
+ const weights=[...form.querySelectorAll('.ps6d-dough')].map(v=>v.value.trim());
+ const batches=[...form.querySelectorAll('.ps6d-batches')].map(v=>Number(v.value));
+ if(steps.length&&steps.some(v=>!v)){e.preventDefault();alert('Please confirm all four production stages before finishing, or return to production later.');return;}
+ if(weights.some((v,i)=>v!==''&&(!Number.isFinite(Number(v))||Number(v)<=0))||batches.some(n=>!Number.isFinite(n)||n<=0)){e.preventDefault();alert('Check the optional dough weights and batch quantities.');return;}
+ ps6dPriorActualSave(e,x);
+ if(!p||p.status!=='Completed')return;
+ if(steps.length)d.productionSteps[productionRecordKey('orders',x)]=steps;
+ d.doughHistory ||= [];
+ (p.lines||[]).forEach((line,i)=>{
+  if(!Number.isInteger(values[i])||values[i]<0)return;
+  const exists=d.doughHistory.some(h=>h.planKind==='orders'&&h.planId===x&&h.recipeId===line.flavor&&h.shapeId===line.shape);
+  if(exists)return;
+  d.doughHistory.push({id:id(),recipeId:line.flavor,shapeId:line.shape,planKind:'orders',planId:x,date:new Date().toISOString(),weightOz:weights[i]?Number(weights[i]):null,finishedPops:values[i],batchCount:batches[i]||1,exclude:false});
+ });
+ save();render();
+};
+
+try{render();psWelcomeFirstLaunch()}catch(psError){window.psShowStartupError?.(psError?.stack||psError?.message||psError);psEmergencyRecovery(psError)}if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(console.warn));</script></body></html>
