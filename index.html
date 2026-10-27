@@ -651,7 +651,7 @@ renderPlans=function(kind){popPrevRenderPlans(kind);if(kind!=='orders')return;fo
 // Past events: comparison-only records with no stock or freezer effects.
 d.historicalEvents ||= [];
 function pastEventAsReport(h){
- const made=Number(h.brought)||0,sold=Number(h.sold)||0;
+ const made=h.brought==null?null:Number(h.brought),sold=Number(h.sold)||0;
  return {id:h.id,name:h.name,date:h.date,location:h.location,eventCategory:h.eventCategory,
   vendorFeeEnabled:Number(h.vendorFee)>0,vendorFee:Number(h.vendorFee)||0,
   expenses:Number(h.otherExpenses)>0?[{name:'Recorded event costs',amount:Number(h.otherExpenses)}]:[],
@@ -665,7 +665,7 @@ function pastEventForm(x=''){
  '<label>Event date</label><input name="date" type="date" required value="'+esc(h.date||'')+'">'+
  '<label>Location (optional)</label><input name="location" value="'+esc(h.location||'')+'">'+
  '<label>Event category</label><select name="eventCategory">'+[...eventCategoryNames].sort((a,b)=>a.localeCompare(b)).map(c=>'<option '+((h.eventCategory||'Market / Vendor Event')===c?'selected':'')+'>'+esc(c)+'</option>').join('')+'</select>'+
- '<div class="formgrid"><div><label>Pops brought</label><input name="brought" type="number" min="0" step="1" required value="'+(h.brought??'')+'"></div><div><label>Pops sold</label><input name="sold" type="number" min="0" step="1" required value="'+(h.sold??'')+'"></div></div>'+
+ '<div class="formgrid"><div><label>Pops brought (optional)</label><input name="brought" type="number" min="0" step="1" placeholder="Unknown" value="'+(h.brought??'')+'"></div><div><label>Pops sold</label><input name="sold" type="number" min="0" step="1" required value="'+(h.sold??'')+'"></div></div>'+
  '<label>Top-selling flavor</label><input name="topFlavor" placeholder="e.g. Funfetti" value="'+esc(h.topFlavor||'')+'">'+
  '<div class="formgrid"><div><label>Total event sales ($)</label><input name="sales" type="number" min="0" step="0.01" required value="'+(h.sales??'')+'"></div><div><label>Vendor fee ($)</label><input name="vendorFee" type="number" min="0" step="0.01" value="'+(h.vendorFee??0)+'"></div><div><label>Other event costs ($)</label><input name="otherExpenses" type="number" min="0" step="0.01" value="'+(h.otherExpenses??0)+'"></div></div>'+
  '<label>Notes / what sold well (optional)</label><textarea name="notes" rows="3">'+esc(h.notes||'')+'</textarea>'+
@@ -675,8 +675,8 @@ function pastEventForm(x=''){
 function savePastEvent(e,x){
  e.preventDefault();const f=e.target;
  const int=n=>Number(f.elements[n].value);
- const n=int('brought'),sold=int('sold');
- if(!Number.isInteger(n)||n<0||!Number.isInteger(sold)||sold<0||sold>n){alert('Pops brought and sold must be whole numbers, and sold cannot exceed brought.');return}
+ const broughtText=f.elements.brought.value.trim(),n=broughtText===''?null:Number(broughtText),sold=int('sold');
+ if((n!==null&&(!Number.isInteger(n)||n<0))||!Number.isInteger(sold)||sold<0||(n!==null&&sold>n)){alert('Enter valid whole numbers. Sold cannot exceed brought when brought is known.');return}
  const moneyFields=['sales','vendorFee','otherExpenses'];if(moneyFields.some(k=>!Number.isFinite(int(k))||int(k)<0)){alert('Sales and costs must be valid non-negative amounts.');return}
  const record={id:x||id(),name:f.elements.name.value.trim(),date:f.elements.date.value,location:f.elements.location.value.trim(),eventCategory:f.elements.eventCategory.value,
   brought:n,sold,topFlavor:f.elements.topFlavor.value.trim(),sales:int('sales'),vendorFee:int('vendorFee'),otherExpenses:int('otherExpenses'),notes:f.elements.notes.value.trim()};
@@ -704,7 +704,7 @@ renderBusiness=function(){
  const history=document.createElement('div');history.className='card';
  history.innerHTML='<h3>Past events</h3><p class="muted small">Add past event results manually without changing stock. They count toward year-end totals and event comparisons.</p><button type="button" onclick="pastEventForm()">+ Add past event</button>'+
  (alpha(d.historicalEvents).map(h=>
- '<div class="item row"><div><strong>'+esc(h.name)+'</strong><div class="small muted">'+esc(h.date)+' · '+h.sold+'/'+h.brought+' sold · '+money(h.sales)+'</div></div><button type="button" class="alt" onclick="pastEventForm(\''+h.id+'\')">Edit</button></div>').join('')||'<p class="muted">No past events recorded yet.</p>');
+ '<div class="item row"><div><strong>'+esc(h.name)+'</strong><div class="small muted">'+esc(h.date)+' · '+h.sold+' sold'+(h.brought==null?'':' / '+h.brought+' brought')+' · '+money(h.sales)+'</div></div><button type="button" class="alt" onclick="pastEventForm(\''+h.id+'\')">Edit</button></div>').join('')||'<p class="muted">No past events recorded yet.</p>');
  const compare=[...section.querySelectorAll('h3')].find(h=>h.textContent.includes('Compare completed events'));
  const comparisonCard=compare?.closest('.card');
  if(comparisonCard){
@@ -4036,11 +4036,11 @@ renderPlans=function(kind){
   edit.addEventListener('click',()=>pastEventForm(event.id));
   line.append(info,edit);card.append(line);
   const results=document.createElement('div');results.className='small muted';
-  results.textContent='Sold: '+(Number(event.sold)||0)+' / '+(Number(event.brought)||0)+' · Sales: '+money(Number(event.sales)||0);
+  results.textContent='Sold: '+(Number(event.sold)||0)+(event.brought==null?' (brought unknown)':' / '+Number(event.brought)+' brought')+' · Sales: '+money(Number(event.sales)||0);
   card.append(results);
   (isPast?past:active).push({card,event});
  });
- const section=document.createElement('section');section.className='ps-events-active';
+ const section=document.createElement('div');section.className='ps-events-active';
  const heading=document.createElement('h3');heading.textContent='Current & Upcoming Events ('+active.length+')';
  section.append(heading);
  if(active.length){
@@ -4123,6 +4123,381 @@ psBulkEditShapes=function(){
  if(select)select.style.display='none';
  const note=[...form.querySelectorAll('p')].find(el=>el.textContent.includes('Stick type uses'));
  if(note)note.style.display='none';
+};
+
+
+/* Historical-event flavor breakdown; presentation-only, no inventory deductions. */
+function psPastFlavorRow(row={}){
+ const holder=document.createElement('div');holder.className='card ps-past-flavor-row';
+ holder.style.margin='8px 0';holder.style.padding='10px';
+ const grid=document.createElement('div');grid.className='formgrid';
+ const flavor=document.createElement('div'),brought=document.createElement('div'),sold=document.createElement('div');
+ const fl=document.createElement('label');fl.textContent='Flavor';
+ const fi=document.createElement('input');fi.className='ps-past-flavor';fi.placeholder='e.g. Funfetti';fi.value=row.flavor||'';
+ const suggestions=document.createElement('datalist');suggestions.id='psPastFlavorSuggestions';
+ // Reuse saved flavor names while allowing historical flavors not in Recipes.
+ const names=[...new Set((d.recipes||[]).map(r=>r.name).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+ const listId='ps-past-flavors-'+Math.random().toString(36).slice(2);
+ suggestions.id=listId;fi.setAttribute('list',listId);
+ names.forEach(name=>{const o=document.createElement('option');o.value=name;suggestions.append(o)});
+ flavor.append(fl,fi,suggestions);
+ const bl=document.createElement('label');bl.textContent='Brought (optional)';
+ const bi=document.createElement('input');bi.className='ps-past-brought';bi.type='number';bi.min='0';bi.step='1';bi.placeholder='Unknown';bi.value=row.brought??'';brought.append(bl,bi);
+ const sl=document.createElement('label');sl.textContent='Sold';
+ const si=document.createElement('input');si.className='ps-past-sold';si.type='number';si.min='0';si.step='1';si.value=row.sold??0;sold.append(sl,si);
+ grid.append(flavor,brought,sold);holder.append(grid);
+ const remove=document.createElement('button');remove.type='button';remove.className='alt';remove.textContent='Remove flavor';
+ remove.addEventListener('click',()=>{holder.remove();psPastRefreshTotals()});holder.append(remove);
+ for(const input of [bi,si])input.addEventListener('input',psPastRefreshTotals);
+ return holder;
+}
+function psPastRefreshTotals(){
+ const rows=[...document.querySelectorAll('#psPastFlavorRows .ps-past-flavor-row')];
+ if(!rows.length)return;
+ const form=$('dialogBody')?.querySelector('form');if(!form)return;
+ const sum=selector=>rows.reduce((n,row)=>n+(Number(row.querySelector(selector)?.value)||0),0);
+ form.elements.brought.value=rows.every(row=>row.querySelector('.ps-past-brought')?.value.trim()!=='')?sum('.ps-past-brought'):'';
+ form.elements.sold.value=sum('.ps-past-sold');
+}
+function psPastAddFlavor(row={}){
+ const target=$('psPastFlavorRows');if(!target)return;
+ target.append(psPastFlavorRow(row));psPastRefreshTotals();
+}
+const psPastFlavorFormBefore=pastEventForm;
+pastEventForm=function(x=''){
+ psPastFlavorFormBefore(x);
+ const form=$('dialogBody')?.querySelector('form');if(!form)return;
+ const h=(d.historicalEvents||[]).find(v=>v.id===x)||{};
+ const top=[...form.querySelectorAll('label')].find(el=>el.textContent.trim()==='Top-selling flavor');
+ if(!top)return;
+ const box=document.createElement('div');box.className='pair';
+ const title=document.createElement('h3');title.textContent='Pops by flavor';
+ const hint=document.createElement('p');hint.className='muted small';
+ hint.textContent='Enter pops sold for each flavor. Leave Brought blank if unknown. Totals update automatically; inventory is not changed.';
+ const rows=document.createElement('div');rows.id='psPastFlavorRows';
+ const button=document.createElement('button');button.type='button';button.className='alt';button.textContent='+ Add flavor';button.addEventListener('click',()=>psPastAddFlavor());
+ box.append(title,hint,rows,button);top.before(box);
+ const existing=Array.isArray(h.flavorResults)?h.flavorResults:[];
+ if(existing.length)existing.forEach(psPastAddFlavor);
+ else if(!x)psPastAddFlavor();
+ // Old records with aggregate counts remain editable until a breakdown is supplied.
+ for(const key of ['brought','sold'])form.elements[key].readOnly=existing.length>0||!x;
+};
+const psPastFlavorSaveBefore=savePastEvent;
+savePastEvent=function(e,x){
+ const f=e.target,rows=[...f.querySelectorAll('#psPastFlavorRows .ps-past-flavor-row')];
+ const results=rows.map(row=>({
+  flavor:row.querySelector('.ps-past-flavor').value.trim(),
+  brought:row.querySelector('.ps-past-brought').value.trim()===''?null:Number(row.querySelector('.ps-past-brought').value),
+  sold:Number(row.querySelector('.ps-past-sold').value)
+ }));
+ if(results.some(r=>!r.flavor||(r.brought!==null&&(!Number.isInteger(r.brought)||r.brought<0))||!Number.isInteger(r.sold)||r.sold<0||(r.brought!==null&&r.sold>r.brought))){
+  e.preventDefault();alert('Each flavor needs a name and valid sold quantity. Brought may be blank, but if entered cannot be less than sold.');return;
+ }
+ if(results.length){
+  f.elements.brought.value=results.every(r=>r.brought!==null)?results.reduce((n,r)=>n+r.brought,0):'';
+  f.elements.sold.value=results.reduce((n,r)=>n+r.sold,0);
+ }else if(!x){
+  e.preventDefault();alert('Add at least one flavor for this past event.');return;
+ }
+ const ids=new Set((d.historicalEvents||[]).map(h=>h.id));
+ psPastFlavorSaveBefore(e,x);
+ const record=x?d.historicalEvents.find(h=>h.id===x):d.historicalEvents.find(h=>!ids.has(h.id));
+ if(record){record.flavorResults=results;save()}
+};
+const psPastFlavorReportBefore=pastEventAsReport;
+pastEventAsReport=function(h){
+ const report=psPastFlavorReportBefore(h);
+ if(Array.isArray(h.flavorResults)&&h.flavorResults.length){
+  report.report.rows=h.flavorResults.map(r=>({flavor:r.flavor,shape:'',made:r.brought==null?null:Number(r.brought),sold:Number(r.sold)||0,frozen:0,other:0}));
+ }
+ return report;
+};
+
+
+/* Non-destructive unfinished-form drafts, prompted only by the dialog X. */
+const psDraftKey='popstock_form_drafts_v1';
+let psDraftContext=null;
+function psDraftAll(){try{return JSON.parse(localStorage.getItem(psDraftKey)||'{}')||{}}catch{return {}}}
+function psDraftFields(form){
+ return [...form.querySelectorAll('input,select,textarea')].filter(el=>el.type!=='file'&&el.type!=='button'&&el.type!=='submit'&&el.type!=='hidden')
+  .map((el,i)=>({name:el.name||'',className:el.className||'',type:el.type,index:i,value:el.type==='checkbox'||el.type==='radio'?el.checked:el.value}));
+}
+function psDraftRestore(form,fields){
+ const els=[...form.querySelectorAll('input,select,textarea')].filter(el=>el.type!=='file'&&el.type!=='button'&&el.type!=='submit'&&el.type!=='hidden');
+ fields.forEach(f=>{const el=els[f.index];if(!el||el.type!==f.type)return;
+ if(el.type==='checkbox'||el.type==='radio')el.checked=!!f.value;else el.value=f.value;
+ el.dispatchEvent(new Event('change',{bubbles:false}));
+ });
+}
+function psDraftCloseX(){
+ const dialog=$('dialog'),form=dialog.querySelector('#dialogBody form');
+ if(!form){dialog.close();return}
+ const key=psDraftContext?.key;
+ const fields=psDraftFields(form),initial=psDraftContext?.initial||[];
+ const changed=JSON.stringify(fields)!==JSON.stringify(initial);
+ if(!changed){dialog.close();return}
+ const answer=confirm('Save this unfinished entry as a draft?\\n\\nOK = Save Draft\\nCancel = More options');
+ if(answer){
+  const drafts=psDraftAll();drafts[key]={title:$('dialogTitle').textContent,fields,savedAt:new Date().toISOString()};
+  try{localStorage.setItem(psDraftKey,JSON.stringify(drafts))}catch{alert('Unable to store draft on this device. The entry will stay open.');return}
+  dialog.close();return;
+ }
+ if(confirm('Discard changes and close?\\n\\nOK = Discard\\nCancel = Keep editing'))dialog.close();
+}
+const psDraftModalBefore=modal;
+modal=function(title,body){
+ psDraftModalBefore(title,body);
+ const form=$('dialogBody')?.querySelector('form');
+ if(!form){psDraftContext=null;return}
+ const key=title+'|'+(form.getAttribute('onsubmit')||'');
+ psDraftContext={key,initial:psDraftFields(form)};
+ const draft=psDraftAll()[key];
+ if(draft&&(psOpeningDraftKey===key||confirm('Restore the saved draft for '+title+'?'))){psDraftContext.restored=true;psDraftRestore(form,draft.fields||[])}
+};
+const psDraftDoneBefore=done;
+done=function(){
+ if(psDraftContext?.key){const all=psDraftAll();delete all[psDraftContext.key];try{localStorage.setItem(psDraftKey,JSON.stringify(all))}catch{}}
+ psDraftContext=null;return psDraftDoneBefore();
+};
+const psDraftX=$('dialog')?.querySelector('.row button');
+if(psDraftX){psDraftX.removeAttribute('onclick');psDraftX.addEventListener('click',psDraftCloseX)}
+
+
+/* Usability consolidation: dashboard, filters, helpful defaults, and complete line drafts. */
+const psUxRenderPlansBefore=renderPlans;
+renderPlans=function(kind){
+ psUxRenderPlansBefore(kind);
+ if(!['orders','events'].includes(kind))return;
+ const root=$(kind),first=root.querySelector('.row');if(!first)return;
+ const tools=document.createElement('div');tools.className='card ps-ux-filter';tools.style.padding='12px';
+ const search=document.createElement('input');search.type='search';search.placeholder='Search '+kind+' by name';search.setAttribute('aria-label','Search '+kind);
+ const status=document.createElement('select');status.setAttribute('aria-label','Filter status');
+ ['All statuses','Planned','In progress','Completed'].forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;status.append(o)});
+ const count=document.createElement('div');count.className='small muted';
+ tools.append(search,status,count);first.after(tools);
+ const apply=()=>{
+  let visible=0;const q=search.value.toLowerCase().trim();
+  const elements=[...root.querySelectorAll('button[onclick]')]
+   .filter(b=>String(b.getAttribute('onclick')||'').startsWith("editPlan('"+kind+"','"))
+   .map(b=>b.closest('.card')).filter((card,i,arr)=>card&&arr.indexOf(card)===i);
+  for(const card of elements){
+   const edit=[...card.querySelectorAll('button[onclick]')].find(b=>String(b.getAttribute('onclick')||'').startsWith("editPlan('"+kind+"','"));
+   const id=edit?.getAttribute('onclick')?.split("'")[3];
+   const plan=(d[kind]||[]).find(p=>p.id===id);
+   if(!plan)continue;
+   const match=(plan.name||plan.customer||'').toLowerCase().includes(q)&&(status.value==='All statuses'||(plan.status||'Planned')===status.value);
+   card.style.display=match?'':'none';if(match)visible++;
+  }
+  count.textContent=visible+' matching '+kind;
+  if(kind==='events'){
+   const historical=root.querySelector('.ps-events-past');
+   if(historical)historical.style.display='';
+  }
+ };
+ search.addEventListener('input',apply);status.addEventListener('change',apply);apply();
+};
+const psUxHomeBefore=renderHome;
+renderHome=function(){
+ psUxHomeBefore();
+ const root=$('home');if(!root)return;
+ const drafts=Object.entries(psDraftAll()).sort((a,b)=>String(b[1].savedAt||'').localeCompare(String(a[1].savedAt||'')));
+ const card=document.createElement('div');card.className='card';card.id='psContinueWorking';
+ const heading=document.createElement('h3');heading.textContent='Continue working';
+ card.append(heading);
+ if(!drafts.length){const empty=document.createElement('p');empty.className='muted small';empty.textContent='No unfinished drafts on this device.';card.append(empty)}
+ drafts.slice(0,5).forEach(([key,draft])=>{
+  const line=document.createElement('div');line.className='item row';
+  const name=document.createElement('div');const strong=document.createElement('strong');strong.textContent=draft.title||'Untitled draft';
+  const saved=document.createElement('div');saved.className='small muted';saved.textContent='Saved '+(draft.savedAt?new Date(draft.savedAt).toLocaleDateString():'on this device');
+  name.append(strong,saved);
+  const button=document.createElement('button');button.type='button';button.className='alt';button.textContent='Open section';
+  button.addEventListener('click',()=>{
+   const title=String(draft.title||'').toLowerCase();
+   go(title.includes('event')?'events':title.includes('order')?'orders':title.includes('shape')||title.includes('stock')?'stock':title.includes('quote')||title.includes('estimate')?'quotes':'home');
+   alert('Open the matching entry form to restore this draft.');
+  });
+  line.append(name,button);card.append(line);
+ });
+ const actions=root.querySelector('.home-actions')?.closest('.card');
+ if(actions)actions.after(card);else root.prepend(card);
+};
+const psUxModalBefore=modal;
+modal=function(title,body){
+ psUxModalBefore(title,body);
+ const form=$('dialogBody')?.querySelector('form');if(!form)return;
+ const sections=[...form.querySelectorAll('.pair')].filter(el=>el.querySelector('h3')&&/optional|additional|advanced/i.test(el.querySelector('h3').textContent||''));
+ sections.forEach(el=>{
+  if(el.closest('details'))return;
+  const details=document.createElement('details');details.className='ps-ux-optional';details.style.margin='12px 0';
+  const summary=document.createElement('summary');summary.textContent=el.querySelector('h3').textContent;summary.style.cursor='pointer';
+  el.before(details);details.append(summary,el);
+ });
+};
+const psUxDraftCloseBefore=psDraftCloseX;
+psDraftCloseX=function(){
+ const form=$('dialogBody')?.querySelector('form');
+ if(form&&psDraftContext){
+  // Keep both normal controls and dynamically added repeatable form rows.
+  psDraftContext.repeatable={
+   planLines:[...form.querySelectorAll('#planlines .planline')].map(el=>({
+    flavor:el.querySelector('.flavor')?.value||'',count:Number(el.querySelector('.count')?.value)||0,
+    shape:el.querySelector('.shape')?.value||'',stickSupply:el.querySelector('.ps-line-stick')?.value||''
+   })),
+   pastFlavors:[...form.querySelectorAll('#psPastFlavorRows .ps-past-flavor-row')].map(el=>({
+    flavor:el.querySelector('.ps-past-flavor')?.value||'',brought:el.querySelector('.ps-past-brought')?.value.trim()===''?null:Number(el.querySelector('.ps-past-brought')?.value),
+    sold:Number(el.querySelector('.ps-past-sold')?.value)||0
+   }))
+  };
+ }
+ const key=psDraftContext?.key;
+ psUxDraftCloseBefore();
+ if(key&&psDraftContext?.repeatable){
+  const all=psDraftAll();if(all[key]){all[key].repeatable=psDraftContext.repeatable;try{localStorage.setItem(psDraftKey,JSON.stringify(all))}catch{}}
+ }
+};
+const psUxDraftModalBefore=modal;
+modal=function(title,body){
+ psUxDraftModalBefore(title,body);
+ const form=$('dialogBody')?.querySelector('form');if(!form||!psDraftContext)return;
+ const draft=psDraftAll()[psDraftContext.key];
+ if(!draft?.repeatable)return;
+ const restore=()=>{
+  const lines=draft.repeatable.planLines||[];
+  if(lines.length&&$('planlines')){$('planlines').innerHTML='';lines.forEach(line=>addLine(line))}
+  const flavors=draft.repeatable.pastFlavors||[];
+  if(flavors.length&&$('psPastFlavorRows')){$('psPastFlavorRows').innerHTML='';flavors.forEach(line=>psPastAddFlavor(line))}
+  psDraftRestore(form,draft.fields||[]);
+ };
+ // Dynamic flavor controls may be appended after modal() returns.
+ if(psDraftContext.restored)queueMicrotask(restore);
+};
+const psUxCloseButton=$('dialog')?.querySelector('.row button');
+if(psUxCloseButton){const replacement=psUxCloseButton.cloneNode(true);psUxCloseButton.replaceWith(replacement);replacement.removeAttribute('onclick');replacement.addEventListener('click',psDraftCloseX)}
+
+
+/* Drafts appear in their own section and open their saved form directly. */
+let psOpeningDraftKey=null;
+function psDraftTarget(key,draft){
+ const action=String(key).split('|').slice(1).join('|');
+ const title=String(draft.title||'').toLowerCase();
+ if(action.includes("savePlan(event,'orders'")||action.includes('savePlan(event,"orders"'))return 'orders';
+ if(action.includes("savePlan(event,'events'")||action.includes('savePastEvent(')||title.includes('event'))return 'events';
+ if(action.includes('saveItem(')||action.includes('saveShape(')||title.includes('shape')||title.includes('stock'))return 'stock';
+ if(action.includes('saveFlavor(')||title.includes('flavor')||title.includes('recipe'))return 'flavors';
+ if(action.includes('saveCustomerQuote(')||title.includes('estimate')||title.includes('quote'))return 'quotes';
+ if(title.includes('feedback'))return 'feedback';
+ if(title.includes('production'))return 'production';
+ return 'settings';
+}
+function psDraftAction(key,draft){
+ const action=String(key).split('|').slice(1).join('|');
+ const extract=(name)=>{const match=action.match(new RegExp(name+"\\([^)]*\\)"));return match?.[0]||''};
+ let m=action.match(/savePlan\(event,'(orders|events)','([^']*)'\)/);
+ if(m)return ()=>editPlan(m[1],m[2]);
+ m=action.match(/savePastEvent\(event,'([^']*)'\)/);
+ if(m)return ()=>pastEventForm(m[1]);
+ m=action.match(/saveItem\(event,'([^']*)'\)/);
+ if(m)return ()=>editItem(m[1]);
+ m=action.match(/saveFlavor\(event,'([^']*)'\)/);
+ if(m)return ()=>editFlavor(m[1]);
+ m=action.match(/saveShape\(event,'([^']*)'\)/);
+ if(m)return ()=>editShape(m[1]);
+ m=action.match(/(?:saveCustomerQuote|psSaveCustomerQuote)\(event,'([^']*)'\)/);
+ if(m)return ()=>newCustomerQuote(m[1]);
+ const title=String(draft.title||'').toLowerCase();
+ if(title.includes('past event'))return ()=>pastEventForm();
+ if(title.includes('event'))return ()=>editPlan('events');
+ if(title.includes('order'))return ()=>editPlan('orders');
+ if(title.includes('quote')||title.includes('estimate'))return ()=>newCustomerQuote();
+ if(title.includes('stock'))return ()=>editItem();
+ if(title.includes('shape'))return ()=>editShape();
+ if(title.includes('flavor')||title.includes('recipe'))return ()=>editFlavor();
+ return null;
+}
+function psOpenSavedDraft(key){
+ const draft=psDraftAll()[key];if(!draft)return;
+ const open=psDraftAction(key,draft);
+ if(!open){alert('This draft uses a form that cannot be reopened directly yet. Its information has not been deleted.');return}
+ psOpeningDraftKey=key;
+ go(psDraftTarget(key,draft));
+ try{open()}catch(error){psOpeningDraftKey=null;alert('Could not reopen this draft: '+error.message)}
+}
+function psDraftList(where,limit=100){
+ const entries=Object.entries(psDraftAll()).filter(([key,draft])=>!where||psDraftTarget(key,draft)===where)
+   .sort((a,b)=>String(b[1].savedAt||'').localeCompare(String(a[1].savedAt||''))).slice(0,limit);
+ const wrap=document.createElement('div');wrap.className='card ps-draft-list';
+ const heading=document.createElement('h3');heading.textContent=where?'Saved Drafts ('+entries.length+')':'Continue working';
+ wrap.append(heading);
+ if(!entries.length){const empty=document.createElement('p');empty.className='muted small';empty.textContent='No saved drafts here.';wrap.append(empty)}
+ entries.forEach(([key,draft])=>{
+  const line=document.createElement('div');line.className='item row';
+  const detail=document.createElement('div');
+  const name=document.createElement('strong');name.textContent=draft.title||'Untitled draft';
+  const meta=document.createElement('div');meta.className='muted small';
+  meta.textContent='Draft saved '+(draft.savedAt?new Date(draft.savedAt).toLocaleString():'on this device');
+  detail.append(name,meta);
+  const open=document.createElement('button');open.type='button';open.className='alt';open.textContent='Resume draft';
+  open.addEventListener('click',()=>psOpenSavedDraft(key));
+  const del=document.createElement('button');del.type='button';del.className='danger';del.textContent='Delete draft';
+  del.addEventListener('click',()=>{
+   if(!confirm('Delete this saved draft? This cannot be undone. Existing orders, events and other saved records will not be deleted.'))return;
+   const drafts=psDraftAll();if(!Object.prototype.hasOwnProperty.call(drafts,key))return;
+   delete drafts[key];
+   try{localStorage.setItem(psDraftKey,JSON.stringify(drafts))}catch(err){alert('Could not delete draft: '+err.message);return}
+   render();
+  });
+  const actions=document.createElement('div');actions.className='actions';actions.append(open,del);
+  line.append(detail,actions);wrap.append(line);
+ });
+ return wrap;
+}
+const psDirectDraftModalBefore=modal;
+modal=function(title,body){
+ // The existing modal wrapper handles restoring normal fields and dynamic rows.
+ const direct=psOpeningDraftKey;
+ psDirectDraftModalBefore(title,body);
+ if(!direct)return;
+ psOpeningDraftKey=null;
+ const ctx=psDraftContext;
+ const draft=psDraftAll()[direct];
+ if(!ctx||!draft)return;
+ if(ctx.key!==direct){
+  // Preserve the original draft key even if a form's title changed.
+  ctx.key=direct;
+  psDraftRestore($('dialogBody').querySelector('form'),draft.fields||[]);
+  ctx.restored=true;
+ }
+ if(draft.repeatable){
+  queueMicrotask(()=>{
+   const lines=draft.repeatable.planLines||[];
+   if(lines.length&&$('planlines')){$('planlines').innerHTML='';lines.forEach(line=>addLine(line))}
+   const flavors=draft.repeatable.pastFlavors||[];
+   if(flavors.length&&$('psPastFlavorRows')){$('psPastFlavorRows').innerHTML='';flavors.forEach(row=>psPastAddFlavor(row))}
+   const form=$('dialogBody')?.querySelector('form');if(form)psDraftRestore(form,draft.fields||[]);
+  });
+ }
+};
+const psDirectDraftHomeBefore=renderHome;
+renderHome=function(){
+ psDirectDraftHomeBefore();
+ const root=$('home');if(!root)return;
+ const old=root.querySelector('#psContinueWorking');
+ const replacement=psDraftList(null,5);replacement.id='psContinueWorking';
+ if(old)old.replaceWith(replacement);else root.prepend(replacement);
+};
+const psDirectDraftRenderBefore=render;
+render=function(){
+ psDirectDraftRenderBefore();
+ ['orders','events','stock','flavors','quotes','production','feedback','settings'].forEach(name=>{
+  const root=$(name);if(!root)return;
+  root.querySelectorAll('.ps-draft-list').forEach(el=>el.remove());
+  const count=Object.entries(psDraftAll()).filter(([key,v])=>psDraftTarget(key,v)===name).length;
+  if(!count)return;
+  const draftBox=psDraftList(name);
+  const header=root.querySelector('h2,.row');
+  if(header)header.after(draftBox);else root.prepend(draftBox);
+ });
 };
 
 try{render();psWelcomeFirstLaunch()}catch(psError){window.psShowStartupError?.(psError?.stack||psError?.message||psError);psEmergencyRecovery(psError)}if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(console.warn));</script></body></html>
