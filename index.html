@@ -3681,4 +3681,448 @@ renderGuide=function(){
  if(firstCard)firstCard.before(card);else root.append(card);
 };
 
+
+/* Shape category disclosure state survives editing and re-rendering My Shapes. */
+const psShapeExpandedGroups=new Set();
+const psShapeKeepOpenBefore=renderStock;
+renderStock=function(){
+ psShapeKeepOpenBefore();
+ const container=$('psShapeGroups');
+ if(!container)return;
+ const groups=[...container.querySelectorAll(':scope > details')];
+ const ids=[...d.shapeGroups].sort((a,b)=>a.name.localeCompare(b.name)).map(v=>v.id).concat('');
+ groups.forEach((details,index)=>{
+  const groupId=ids[index];if(groupId===undefined)return;
+  if(psShapeExpandedGroups.has(groupId))details.open=true;
+  details.addEventListener('toggle',()=>{
+   if(details.open)psShapeExpandedGroups.add(groupId);
+   else psShapeExpandedGroups.delete(groupId);
+  });
+ });
+};
+
+
+/* Personal-only bulk shape editor. Explicit selection and opt-in fields; no yield or stock changes. */
+function psBulkEditShapes(){
+ const shapes=alpha(d.shapes);
+ if(!shapes.length){alert('Add a popper shape first.');return;}
+ const options=shapes.map(sh=>'<label style="display:flex;align-items:center;gap:10px;margin:0;padding:10px;border-bottom:1px solid #edf1eb;font-weight:500"><input type="checkbox" class="ps-bulk-shape" value="'+esc(sh.id)+'" style="width:20px;min-width:20px;height:20px"><span style="flex:1">'+esc(sh.name)+'</span><span class="muted small">'+esc(d.shapeGroups.find(g=>g.id===sh.shapeGroup)?.name||'Uncategorized')+'</span></label>').join('');
+ const sizeOptions=[['small','Small'],['medium','Medium'],['large','Large'],['xl','Extra Large']];
+ const categoryOptions=d.shapeGroups.slice().sort((a,b)=>a.name.localeCompare(b.name));
+ modal('Bulk edit popper shapes',
+ '<form id="psBulkShapesForm" onsubmit="psSaveBulkShapes(event)">'+
+ '<p class="muted small">Select the shapes to update. Only fields you turn on will change. Other shape details, yields and existing inventory remain as they are.</p>'+
+ '<div class="actions"><button type="button" class="alt" onclick="document.querySelectorAll(\'.ps-bulk-shape\').forEach(el=>el.checked=true);psBulkCount()">Select all</button><button type="button" class="alt" onclick="document.querySelectorAll(\'.ps-bulk-shape\').forEach(el=>el.checked=false);psBulkCount()">Clear selection</button></div>'+
+ '<p id="psBulkCount" class="notice">0 shapes selected</p>'+
+ '<div style="max-height:34vh;overflow-y:auto;border:1px solid #dde6dc;border-radius:12px">'+options+'</div>'+
+ '<h3 style="margin-top:18px">Changes to apply</h3>'+
+ '<label><input type="checkbox" name="changeSize" style="width:auto"> Update popper size</label>'+
+ '<select name="popSize">'+sizeOptions.map(([v,label])=>'<option value="'+v+'">'+label+'</option>').join('')+'</select>'+
+ '<label><input type="checkbox" name="changeStick" style="width:auto"> Update stick type</label>'+
+ '<select name="popStick">'+popPackOptions('stick','')+'</select>'+
+ '<label><input type="checkbox" name="changeCategory" style="width:auto"> Update shape category</label>'+
+ '<select name="shapeGroup"><option value="">Uncategorized</option>'+categoryOptions.map(c=>'<option value="'+esc(c.id)+'">'+esc(c.name)+'</option>').join('')+'</select>'+
+ '<p class="muted small">Stick type uses an existing My Stock supply. Choosing None removes the shape’s assigned stick only if that field is enabled.</p>'+
+ '<div class="actions"><button type="submit">Apply to selected shapes</button><button type="button" class="alt" onclick="$(\'dialog\').close()">Cancel</button></div></form>');
+ const form=$('psBulkShapesForm');
+ form.querySelectorAll('.ps-bulk-shape').forEach(el=>el.addEventListener('change',psBulkCount));
+}
+function psBulkCount(){const n=document.querySelectorAll('#psBulkShapesForm .ps-bulk-shape:checked').length;const label=$('psBulkCount');if(label)label.textContent=n+' '+(n===1?'shape':'shapes')+' selected'}
+function psSaveBulkShapes(e){
+ e.preventDefault();
+ const form=e.target,ids=[...form.querySelectorAll('.ps-bulk-shape:checked')].map(el=>el.value);
+ if(!ids.length){alert('Select at least one shape.');return;}
+ const changeSize=form.elements.changeSize.checked,changeStick=form.elements.changeStick.checked,changeCategory=form.elements.changeCategory.checked;
+ if(!changeSize&&!changeStick&&!changeCategory){alert('Choose at least one field to update.');return;}
+ const size=form.elements.popSize.value,stick=form.elements.popStick.value,group=form.elements.shapeGroup.value;
+ if(changeStick&&stick&&!popPackItems('stick').some(i=>i.id===stick)){alert('The selected stick supply is no longer available.');return;}
+ if(changeCategory&&group&&!d.shapeGroups.some(c=>c.id===group)){alert('The selected shape category is no longer available.');return;}
+ const summary=[changeSize?'size: '+size:'',changeStick?'stick: '+(d.items.find(i=>i.id===stick)?.name||'None'):'',changeCategory?'category: '+(d.shapeGroups.find(c=>c.id===group)?.name||'Uncategorized'):''].filter(Boolean).join(', ');
+ if(!confirm('Update '+ids.length+' shapes?\\n'+summary+'\\nOther details and yields will remain unchanged.'))return;
+ const chosen=new Set(ids);let changed=0;
+ d.shapes.forEach(sh=>{if(!chosen.has(sh.id))return;if(changeSize)sh.popSize=size;if(changeStick)sh.popStick=stick;if(changeCategory)sh.shapeGroup=group;changed++});
+ save();$('dialog').close();render();alert('Updated '+changed+' popper shapes.');
+}
+const psBulkShapesRenderBefore=renderStock;
+renderStock=function(){
+ psBulkShapesRenderBefore();
+ const container=$('psShapeGroups');if(!container)return;
+ const actions=container.querySelector('.actions');if(!actions||actions.querySelector('.ps-bulk-launch'))return;
+ const button=document.createElement('button');button.type='button';button.className='alt ps-bulk-launch';button.textContent='Bulk edit shapes';
+ button.addEventListener('click',psBulkEditShapes);actions.append(button);
+};
+
+
+/* Personal order reference: customer-form photo plus persistent order notes. */
+let psOrderPhotoDraft=null;
+const psOrderReferenceEditBefore=editPlan;
+editPlan=function(kind,x=''){
+ psOrderReferenceEditBefore(kind,x);
+ if(kind!=='orders')return;
+ const form=$('dialogBody')?.querySelector('form'),order=d.orders.find(p=>p.id===x);
+ if(!form)return;
+ psOrderPhotoDraft=order?.customerFormPhoto||null;
+ const box=document.createElement('details');box.className='card';
+ box.open=!!(order?.orderNotes||order?.customerFormPhoto);
+ box.innerHTML='<summary style="cursor:pointer"><strong>Customer form & order notes (optional)</strong></summary>'+
+ '<p class="muted small">Keep the customer’s original form with this order. The photo is a reference only; review and enter flavors and quantities yourself.</p>'+
+ '<label>Order notes</label><textarea name="psOrderNotes" rows="4" placeholder="Design requests, colors, pickup details, instructions...">'+esc(order?.orderNotes||'')+'</textarea>'+
+ '<label>Customer order form photo</label><input type="file" accept="image/*" name="psOrderPhoto" class="ps-order-photo">'+
+ '<p class="muted small ps-photo-status"></p>'+
+ '<div class="ps-photo-preview"></div><button type="button" class="alt ps-photo-remove" style="display:none">Remove saved photo</button>';
+ const actions=form.querySelector('.actions');if(actions)actions.before(box);else form.append(box);
+ const preview=box.querySelector('.ps-photo-preview'),status=box.querySelector('.ps-photo-status'),remove=box.querySelector('.ps-photo-remove');
+ const refresh=()=>{
+  preview.replaceChildren();
+  remove.style.display=psOrderPhotoDraft?'inline-block':'none';
+  if(psOrderPhotoDraft){
+   const img=document.createElement('img');img.src=psOrderPhotoDraft;img.alt='Customer order form photo';
+   img.style.cssText='display:block;max-width:100%;max-height:260px;object-fit:contain;border-radius:10px;margin:10px 0';
+   preview.append(img);status.textContent='Photo attached to this order.';
+  }else status.textContent='No photo attached.';
+ };
+ box.querySelector('.ps-order-photo').addEventListener('change',async e=>{
+  const file=e.target.files?.[0];if(!file)return;
+  if(!file.type.startsWith('image/')){alert('Choose an image file.');e.target.value='';return;}
+  const submit=form.querySelector('button[type="submit"],button:not([type])');
+  if(submit)submit.disabled=true;
+  status.textContent='Preparing photo...';
+  try{
+   const source=await new Promise((resolve,reject)=>{
+    const img=new Image(),url=URL.createObjectURL(file);
+    img.onload=()=>{URL.revokeObjectURL(url);resolve(img)};
+    img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('Could not read image'))};
+    img.src=url;
+   });
+   const scale=Math.min(1,1400/Math.max(source.naturalWidth,source.naturalHeight));
+   const canvas=document.createElement('canvas');
+   canvas.width=Math.max(1,Math.round(source.naturalWidth*scale));
+   canvas.height=Math.max(1,Math.round(source.naturalHeight*scale));
+   canvas.getContext('2d').drawImage(source,0,0,canvas.width,canvas.height);
+   const data=canvas.toDataURL('image/jpeg',.72);
+   if(data.length>900000)throw new Error('This image remains too large. Try a smaller screenshot.');
+   psOrderPhotoDraft=data;refresh();
+  }catch(err){status.textContent=err.message||'Photo could not be processed.';alert(status.textContent)}
+  finally{if(submit)submit.disabled=false;}
+ });
+ remove.addEventListener('click',()=>{psOrderPhotoDraft=null;box.querySelector('.ps-order-photo').value='';refresh()});
+ refresh();
+};
+const psOrderReferenceSaveBefore=savePlan;
+savePlan=function(e,kind,x){
+ if(kind!=='orders')return psOrderReferenceSaveBefore(e,kind,x);
+ const notes=e.target.elements.psOrderNotes?.value||'';
+ const before=new Set(d.orders.map(p=>p.id));
+ const photo=psOrderPhotoDraft;
+ const result=psOrderReferenceSaveBefore(e,kind,x);
+ const order=x?d.orders.find(p=>p.id===x):d.orders.find(p=>!before.has(p.id));
+ if(order&&order.status==='Planned'){
+  order.orderNotes=notes;order.customerFormPhoto=photo;
+  try{save()}catch(err){alert('Order saved, but the photo or notes could not be stored. Please download a backup and consider a smaller photo.')}
+ }
+ return result;
+};
+function psViewOrderReference(x){
+ const order=d.orders.find(p=>p.id===x);if(!order)return;
+ const photo=order.customerFormPhoto;
+ const body='<p class="muted small">Order notes</p><div class="card" style="white-space:pre-wrap">'+esc(order.orderNotes||'No notes saved.')+'</div>'+
+ (photo?'<p class="muted small">Customer form photo</p><img alt="Customer order form" style="display:block;width:100%;height:auto;border-radius:12px" src="'+photo+'">':'<p class="muted small">No form photo attached.</p>')+
+ '<div class="actions"><button type="button" class="alt" onclick="$(\'dialog\').close()">Close</button></div>';
+ modal('Order reference: '+(order.name||'Order'),body);
+}
+const psOrderReferenceRenderBefore=renderPlans;
+renderPlans=function(kind){
+ psOrderReferenceRenderBefore(kind);
+ if(kind!=='orders')return;
+ const root=$('orders');
+ d.orders.forEach(order=>{
+  const card=[...root.querySelectorAll('.card')].find(c=>c.querySelector('button[onclick="editPlan(\'orders\',\''+order.id+'\')"]'));
+  if(!card)return;
+  const btn=document.createElement('button');btn.type='button';btn.className='alt';
+  btn.textContent='View form & notes';
+  btn.addEventListener('click',()=>psViewOrderReference(order.id));
+  const actions=card.querySelector('.actions');if(actions)actions.append(btn);else card.append(btn);
+ });
+};
+
+
+/* Personal: order-specific decorative supplies, without forced per-piece costing. */
+function psExtraSupplyRow(v={}){
+ const row=document.createElement('div');row.className='pair ps-extra-supply';
+ row.innerHTML='<label>Supply source</label><select class="ps-extra-source"><option value="stock">Use My Stock</option><option value="buy">Need to buy</option></select>'+
+ '<div class="ps-extra-stock"><label>Choose stock item</label><select class="ps-extra-item"><option value="">Select supply</option>'+alpha(d.items.filter(i=>!isShapeStockItem(i))).map(i=>'<option value="'+esc(i.id)+'">'+esc(i.name)+'</option>').join('')+'</select></div>'+
+ '<div class="ps-extra-new"><label>What do you need?</label><input class="ps-extra-name" placeholder="e.g. Gold star sprinkles"></div>'+
+ '<label>Quantity or description (optional)</label><input class="ps-extra-qty" placeholder="e.g. 1 jar, a small amount, 2 molds">'+
+ '<label>Estimated cost for this order ($, optional)</label><input class="ps-extra-cost" type="number" min="0" step="0.01" placeholder="Leave blank if unknown">'+
+ '<label style="font-weight:500"><input class="ps-extra-bought" type="checkbox" style="width:auto"> Already purchased / available</label>'+
+ '<button type="button" class="alt ps-extra-delete">Remove supply</button>';
+ const source=row.querySelector('.ps-extra-source');
+ source.value=v.source||'stock';row.querySelector('.ps-extra-item').value=v.itemId||'';
+ row.querySelector('.ps-extra-name').value=v.name||'';
+ row.querySelector('.ps-extra-qty').value=v.quantity||'';
+ row.querySelector('.ps-extra-cost').value=v.cost??'';
+ row.querySelector('.ps-extra-bought').checked=!!v.bought;
+ const refresh=()=>{row.querySelector('.ps-extra-stock').hidden=source.value!=='stock';row.querySelector('.ps-extra-new').hidden=source.value!=='buy'};
+ source.addEventListener('change',refresh);refresh();
+ row.querySelector('.ps-extra-delete').addEventListener('click',()=>row.remove());
+ $('ps-extra-supply-list')?.append(row);
+}
+const psExtraEditBefore=editPlan;
+editPlan=function(kind,x=''){
+ psExtraEditBefore(kind,x);if(kind!=='orders')return;
+ const form=$('dialogBody')?.querySelector('form'),order=d.orders.find(p=>p.id===x);if(!form)return;
+ const details=document.createElement('details');details.className='card';
+ details.open=!!order?.additionalSupplies?.length;
+ details.innerHTML='<summary style="cursor:pointer"><strong>Additional order supplies (optional)</strong></summary>'+
+ '<p class="muted small">Molds, sprinkles, toppers and other one-off supplies. Choose an existing stock item or note what to purchase. Cost is optional; use a flat estimate for decorations without measuring them. These do not automatically deduct inventory or alter recipe costing.</p>'+
+ '<div id="ps-extra-supply-list"></div><button type="button" class="alt" id="ps-extra-add">+ Add supply</button>';
+ form.querySelector('.actions')?.before(details);
+ details.querySelector('#ps-extra-add').addEventListener('click',()=>psExtraSupplyRow({source:'buy'}));
+ (order?.additionalSupplies||[]).forEach(psExtraSupplyRow);
+};
+const psExtraSaveBefore=savePlan;
+savePlan=function(e,kind,x){
+ if(kind!=='orders')return psExtraSaveBefore(e,kind,x);
+ const rows=[...e.target.querySelectorAll('.ps-extra-supply')],supplies=[];
+ for(const row of rows){
+  const source=row.querySelector('.ps-extra-source').value,itemId=row.querySelector('.ps-extra-item').value;
+  const name=row.querySelector('.ps-extra-name').value.trim(),quantity=row.querySelector('.ps-extra-qty').value.trim();
+  const costRaw=row.querySelector('.ps-extra-cost').value.trim();
+  if(source==='stock'&&!d.items.some(i=>i.id===itemId)){e.preventDefault();alert('Choose a stock item for each My Stock supply.');return;}
+  if(source==='buy'&&!name){e.preventDefault();alert('Name each supply that needs purchasing.');return;}
+  if(costRaw!==''&&(!Number.isFinite(Number(costRaw))||Number(costRaw)<0)){e.preventDefault();alert('Supply cost must be zero or more, or blank.');return;}
+  supplies.push({source,itemId:source==='stock'?itemId:'',name:source==='buy'?name:'',quantity,cost:costRaw===''?null:Number(costRaw),bought:row.querySelector('.ps-extra-bought').checked});
+ }
+ const oldIds=new Set(d.orders.map(p=>p.id));
+ const result=psExtraSaveBefore(e,kind,x);
+ const p=x?d.orders.find(p=>p.id===x):d.orders.find(p=>!oldIds.has(p.id));
+ if(p?.status==='Planned'){p.additionalSupplies=supplies;save();}
+ return result;
+};
+function psExtraSupplyView(x){
+ const p=d.orders.find(v=>v.id===x);if(!p)return;
+ const entries=p.additionalSupplies||[];
+ const lines=entries.map(v=>{
+  const name=v.source==='stock'?(d.items.find(i=>i.id===v.itemId)?.name||'Unavailable stock item'):v.name;
+  return '<div class="item"><strong>'+esc(name)+'</strong><div class="muted small">'+esc(v.quantity||'Quantity not specified')+' · '+(v.source==='stock'?'From My Stock':v.bought?'Purchased':'Need to buy')+(v.cost===null||v.cost===undefined?' · Cost not estimated':' · Estimated '+money(v.cost))+'</div></div>';
+ }).join('');
+ modal('Additional supplies: '+p.name,(lines||'<p class="muted">No additional supplies added.</p>')+'<p class="muted small">These are order planning notes. Costs are informational only; inventory and recipes are unchanged.</p>');
+}
+const psExtraRenderBefore=renderPlans;
+renderPlans=function(kind){
+ psExtraRenderBefore(kind);if(kind!=='orders')return;
+ d.orders.forEach(p=>{
+  const card=[...$('orders').querySelectorAll('.card')].find(c=>c.querySelector('button[onclick="editPlan(\'orders\',\''+p.id+'\')"]'));
+  if(!card||!(p.additionalSupplies||[]).length)return;
+  const b=document.createElement('button');b.type='button';b.className='alt';b.textContent='Additional supplies ('+p.additionalSupplies.length+')';
+  b.addEventListener('click',()=>psExtraSupplyView(p.id));(card.querySelector('.actions')||card).append(b);
+ });
+};
+
+
+/* Customer-facing estimate sharing and print-ready planned order documents. */
+function psCustomerBrand(){return d.settings?.businessName||d.businessName||'PopStock'}
+function psEstimateLines(q){
+ return [psCustomerBrand(),'CUSTOMER ESTIMATE','Customer: '+(q.customer||'Customer'),
+ 'Flavor: '+flavorName(q.flavor),'Shape: '+shapeName(q.shape),
+ 'Quantity: '+q.count+' pops','Price per pop: '+money(Number(q.price)||0),
+ 'Estimated total: '+money(Number(q.count||0)*Number(q.price||0)),
+ q.notes?'Notes: '+q.notes:'','Estimate only; order not confirmed.'].filter(Boolean).join('\n');
+}
+function psCustomerPrint(title,fields,notes,footer){
+ const w=window.open('','_blank');
+ if(!w){alert('Allow pop-ups to create the printable document.');return;}
+ const rows=fields.map(pair=>'<div class="line"><span>'+esc(String(pair[0]))+'</span><strong>'+esc(String(pair[1]))+'</strong></div>').join('');
+ const page='<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+esc(title)+'</title>'+
+ '<style>body{font:15px system-ui,Arial,sans-serif;color:#273b30;background:white;margin:0;padding:35px;line-height:1.5}main{max-width:740px;margin:auto}header{border-bottom:2px solid #899d86;padding-bottom:20px;margin-bottom:20px}h1{font:700 29px Georgia,serif;margin:0 0 8px}h2{font-size:21px;margin:0}.line{display:flex;justify-content:space-between;gap:20px;border-bottom:1px solid #ddd;padding:12px 0}.line strong{text-align:right}.note{white-space:pre-wrap;background:#f6f8f5;padding:15px;margin-top:18px}.muted{font-size:12px;color:#65736a;margin-top:22px}button{padding:12px 18px;background:#436047;color:white;border:0;border-radius:8px}@media print{body{padding:12px}.print{display:none}}</style></head>'+
+ '<body><main><div class="print"><button onclick="window.print()">Print / Save as PDF</button></div><header><h1>'+esc(psCustomerBrand())+'</h1><h2>'+esc(title)+'</h2></header>'+rows+
+ (notes?'<div class="note"><strong>Notes</strong><div>'+esc(notes)+'</div></div>':'')+'<p class="muted">'+esc(footer)+'</p></main></body></html>';
+ w.document.open();w.document.write(page);w.document.close();w.focus();
+}
+function psQuotePrint(idValue){
+ const q=d.customerQuotes.find(v=>v.id===idValue);if(!q)return;
+ psCustomerPrint('Customer Estimate',[
+ ['Customer',q.customer||'Customer'],['Flavor',flavorName(q.flavor)],
+ ['Shape',shapeName(q.shape)],['Quantity',q.count+' pops'],
+ ['Price per pop',money(Number(q.price)||0)],['Estimated total',money(Number(q.count||0)*Number(q.price||0))]
+ ],q.notes||'','Estimate only. Order details are not confirmed.');
+}
+async function psQuoteShare(idValue){
+ const q=d.customerQuotes.find(v=>v.id===idValue);if(!q)return;
+ const message=psEstimateLines(q);
+ try{
+  if(navigator.share){await navigator.share({title:'Customer Estimate',text:message});return;}
+  if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(message);alert('Copied estimate. Paste it into your customer message.');return;}
+ }catch(err){if(err?.name==='AbortError')return;}
+ prompt('Copy estimate:',message);
+}
+function psSetQuoteStatus(idValue,status){
+ const q=d.customerQuotes.find(v=>v.id===idValue);
+ if(!q||!['Draft','Sent','Accepted'].includes(status))return;
+ q.customerStatus=status;save();render();
+}
+function psPlannedOrderPrint(idValue){
+ const p=d.orders.find(v=>v.id===idValue);if(!p||p.status!=='Planned')return;
+ const fields=[['Customer / Order',p.name||'Untitled'],['Due date',p.date||'Not set'],['Status','Planned']];
+ (p.lines||[]).forEach((line,index)=>fields.push(['Item '+(index+1),flavorName(line.flavor)+' / '+shapeName(line.shape)+' / '+line.count+' pops']));
+ fields.push(['Total planned pops',String((p.lines||[]).reduce((n,line)=>n+(Number(line.count)||0),0))]);
+ if(p.quotedTotal!==null&&p.quotedTotal!==undefined)fields.push(['Quoted total',money(Number(p.quotedTotal))]);
+ psCustomerPrint('Planned Order',fields,p.orderNotes||'','Planning copy. Internal recipe costs and inventory are not included.');
+}
+const psDocQuotesBefore=renderQuotes;
+renderQuotes=function(){
+ psDocQuotesBefore();
+ const root=$('quotes');if(!root)return;
+ root.querySelectorAll('[data-quote-edit]').forEach(edit=>{
+  const identifier=edit.dataset.quoteEdit,q=d.customerQuotes.find(v=>v.id===identifier);
+  const card=edit.closest('.card'),actions=edit.closest('.actions');
+  if(!q||!card||!actions)return;
+  const pill=card.querySelector('.pill');if(pill)pill.textContent=q.customerStatus||'Draft';
+  const add=(name,action)=>{const b=document.createElement('button');b.type='button';b.className='alt';b.textContent=name;b.addEventListener('click',action);actions.append(b)};
+  add('Share / Copy',()=>psQuoteShare(identifier));
+  add('Save estimate PDF',()=>psQuotePrint(identifier));
+  const select=document.createElement('select');select.setAttribute('aria-label','Estimate status');select.style.width='auto';
+  ['Draft','Sent','Accepted'].forEach(name=>{const option=document.createElement('option');option.value=name;option.textContent=name;option.selected===(q.customerStatus||'Draft');select.append(option)});
+  select.addEventListener('change',()=>psSetQuoteStatus(identifier,select.value));actions.append(select);
+ });
+};
+const psDocOrdersBefore=renderPlans;
+renderPlans=function(kind){
+ psDocOrdersBefore(kind);if(kind!=='orders')return;
+ const root=$('orders');if(!root)return;
+ d.orders.filter(p=>p.status==='Planned').forEach(p=>{
+  const cards=[...root.querySelectorAll('.card')];
+  const card=cards.find(c=>[...c.querySelectorAll('button')].some(b=>b.getAttribute('onclick')==="editPlan('orders','"+p.id+"')"));
+  if(!card)return;
+  const actions=card.querySelector('.actions')||card;
+  const button=document.createElement('button');button.type='button';button.className='alt';button.textContent='Save order PDF';
+  button.addEventListener('click',()=>psPlannedOrderPrint(p.id));actions.append(button);
+ });
+};
+
+
+/* Personal Events: presentation-only grouping; no changes to stored records. */
+const psPastEventsRenderBefore=renderPlans;
+renderPlans=function(kind){
+ psPastEventsRenderBefore(kind);
+ if(kind!=='events')return;
+ const root=$('events');if(!root)return;
+ const now=new Date();
+ const today=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');
+ const cards=[...root.querySelectorAll('.card')];
+ const past=[],active=[];
+ (d.events||[]).forEach(event=>{
+  const card=cards.find(c=>[...c.querySelectorAll('button')].some(b=>b.getAttribute('onclick')==="editPlan('events','"+event.id+"')"));
+  if(!card)return;
+  const rawDate=String(event.date||event.due||'').slice(0,10);
+  const datedPast=/^\d{4}-\d{2}-\d{2}$/.test(rawDate)&&rawDate<today;
+  const status=String(event.status||'').trim().toLowerCase();
+  // Date takes precedence over type/status: every dated historical event is past.
+  const isPast=datedPast||status==='completed';
+  (isPast?past:active).push({card,event});
+ });
+ // Include manually recorded historical events, regardless of their category.
+ (d.historicalEvents||[]).forEach(event=>{
+  const date=String(event.date||'').slice(0,10);
+  const isPast=/^\d{4}-\d{2}-\d{2}$/.test(date)&&date<today;
+  const card=document.createElement('div');card.className='card';
+  const line=document.createElement('div');line.className='row';
+  const info=document.createElement('div');
+  const name=document.createElement('strong');name.textContent=event.name||'Untitled event';
+  const detail=document.createElement('div');detail.className='small muted';
+  detail.textContent=[event.date||'No date',event.eventCategory||'Historical event'].join(' · ');
+  info.append(name,detail);
+  const edit=document.createElement('button');edit.type='button';edit.className='alt';edit.textContent='Edit';
+  edit.addEventListener('click',()=>pastEventForm(event.id));
+  line.append(info,edit);card.append(line);
+  const results=document.createElement('div');results.className='small muted';
+  results.textContent='Sold: '+(Number(event.sold)||0)+' / '+(Number(event.brought)||0)+' · Sales: '+money(Number(event.sales)||0);
+  card.append(results);
+  (isPast?past:active).push({card,event});
+ });
+ const section=document.createElement('section');section.className='ps-events-active';
+ const heading=document.createElement('h3');heading.textContent='Current & Upcoming Events ('+active.length+')';
+ section.append(heading);
+ if(active.length){
+  active.forEach(({card})=>section.append(card));
+ }else{
+  const empty=document.createElement('p');empty.className='muted small';empty.textContent='No current or upcoming events.';
+  section.append(empty);
+ }
+ const details=document.createElement('details');details.className='card ps-events-past';
+ details.style.marginTop='16px';
+ const summary=document.createElement('summary');summary.style.cursor='pointer';
+ const title=document.createElement('strong');title.textContent='Past Events ('+past.length+')';
+ summary.append(title);
+ const hint=document.createElement('span');hint.className='muted small';hint.textContent=' — expand to view event history';
+ summary.append(hint);details.append(summary);
+ past.sort((a,b)=>String(b.event.date||'').localeCompare(String(a.event.date||'')))
+  .forEach(({card})=>details.append(card));
+ if(!past.length){
+  const empty=document.createElement('p');empty.className='muted small';empty.textContent='No past events yet.';
+  details.append(empty);
+ }
+ // Only rearrange event cards in the DOM; inventory, reports and saved events are untouched.
+ root.append(section,details);
+};
+
+
+/* Stick choice now belongs to each order/event flavor line. */
+const psStickAddBefore=addLine;
+addLine=function(line={}){
+ psStickAddBefore(line);
+ const row=$('planlines')?.lastElementChild;if(!row)return;
+ const initial=line.stickSupply!==undefined?line.stickSupply:(d.shapes.find(sh=>sh.id===line.shape)?.popStick||'');
+ const box=document.createElement('div');
+ const label=document.createElement('label');label.textContent='Stick type for this flavor';
+ const select=document.createElement('select');select.className='ps-line-stick';
+ select.innerHTML='<option value="">Choose stick type</option><option value="none">No stick</option>'+popPackItems('stick').map(i=>'<option value="'+esc(i.id)+'">'+esc(i.name)+'</option>').join('');
+ select.value=initial||'';box.append(label,select);row.append(box);
+};
+const psStickSaveBefore=savePlan;
+savePlan=function(e,kind,x){
+ if(kind!=='orders'&&kind!=='events')return psStickSaveBefore(e,kind,x);
+ const chosen=[...document.querySelectorAll('#planlines .planline')].map(row=>row.querySelector('.ps-line-stick')?.value||'');
+ if(chosen.some(v=>!v||(v!=='none'&&!d.items.some(i=>i.id===v)))){e.preventDefault();alert('Choose a stick type or No stick for each flavor.');return}
+ const ids=new Set((d[kind]||[]).map(p=>p.id));
+ const result=psStickSaveBefore(e,kind,x);
+ const plan=x?d[kind].find(p=>p.id===x):d[kind].find(p=>!ids.has(p.id));
+ if(plan?.status==='Planned'&&plan.lines?.length===chosen.length){plan.lines.forEach((line,i)=>line.stickSupply=chosen[i]);save();render()}
+ return result;
+};
+addonSticks=function(lines){
+ const list=[],errors=[];
+ for(const line of lines||[]){
+  const shape=d.shapes.find(sh=>sh.id===line.shape);
+  const sid=line.stickSupply!==undefined?line.stickSupply:(shape?.popStick||'');
+  if(!sid||sid==='none')continue;
+  const item=d.items.find(i=>i.id===sid);
+  if(!item){errors.push('Stick supply missing for '+(shape?.name||'a flavor'));continue}
+  const qty=bulkConvertToStock(Number(line.count)||0,'each',item);
+  if(qty===null){errors.push(item.name+': set unit to each or use a pack sized in each');continue}
+  list.push({item,qty});
+ }
+ return {list,errors};
+};
+popPackNeeds=function(lines){return addonSticks(lines).list.map(v=>({supply:v.item,required:v.qty}))};
+const psStickShapeEditBefore=editShape;
+editShape=function(x=''){
+ psStickShapeEditBefore(x);
+ const form=document.querySelector('form[onsubmit^="saveShape"]');
+ const field=form?.elements?.popStick;
+ if(field){field.style.display='none';const label=field.previousElementSibling;if(label?.tagName==='LABEL')label.style.display='none'}
+ const heading=[...(form?.querySelectorAll('h3')||[])].find(el=>el.textContent.includes('Stick supply'));
+ if(heading)heading.textContent='Shape settings';
+};
+const psStickBulkBefore=psBulkEditShapes;
+psBulkEditShapes=function(){
+ psStickBulkBefore();
+ const form=$('psBulkShapesForm');if(!form)return;
+ const box=form.elements.changeStick,select=form.elements.popStick;
+ if(box){box.checked=false;const label=box.closest('label');if(label)label.style.display='none'}
+ if(select)select.style.display='none';
+ const note=[...form.querySelectorAll('p')].find(el=>el.textContent.includes('Stick type uses'));
+ if(note)note.style.display='none';
+};
+
 try{render();psWelcomeFirstLaunch()}catch(psError){window.psShowStartupError?.(psError?.stack||psError?.message||psError);psEmergencyRecovery(psError)}if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(console.warn));</script></body></html>
